@@ -2,7 +2,6 @@ import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
 
 const AppState = {
     apiKey: null,
-    aiKeyMode: 'auto', // 'auto' or 'manual'
     settings: {},
     prompts: {
         main: '',
@@ -61,8 +60,6 @@ const DOM = {
     apiKeyInput: document.getElementById('api-key-input'),
     verifyApiKeyBtn: document.getElementById('verify-api-key-btn'),
     aiConnectionStatus: document.getElementById('ai-connection-status'),
-    manualApiKeyContainer: document.getElementById('manual-api-key-container').parentElement, // ai-connection-section
-    aiModeToggle: document.getElementById('ai-mode-toggle'),
     runDiagnosticsBtn: document.getElementById('run-diagnostics-btn'),
     diagnosticsResults: document.getElementById('diagnostics-results'),
     editPromptsBtn: document.getElementById('edit-prompts-btn'),
@@ -79,18 +76,32 @@ const DOM = {
 };
 
 const defaultPrompts = {
-    main: `Generate a complete family meal plan as a single valid JSON object, without markdown, based on these preferences:
+    main: `Generate a complete family meal plan as a single valid JSON object, without markdown, based on these user settings:
 - People: {settings.people}
 - Days: {settings.days}
-- Protein: {settings.protein}
+- Protein preference: {settings.protein}
 - Restrictions: {settings.restrictions}
-- Goal: {settings.goal}
-- Allergies: {settings.allergies}.`,
-    rules: `The JSON object must strictly follow this structure: { "menu": [], "recipes": {}, "shoppingList": [] }.
-1. Menu: Create a diverse plan for {settings.days} days with no repeating main dishes, except for planned leftovers. Each day object must have: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Intelligently schedule 1-2 leftover meals for lunches to reduce cooking time.
-2. Recipes: A dictionary of recipe objects where the key is a unique camelCase "id". Each recipe must have: "name", "isProteinBased" (boolean for main lunch/dinner dishes), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes }). Only add a "timer" where active waiting is required (e.g., simmering, baking, boiling). Ingredient quantities must be accurately calculated for {settings.people} people.
-3. Shopping List: Consolidate ALL ingredients from ALL recipes. Each item must have: a unique kebab-case "id", "name", "quantity", "category" (from a standard list like "Мясо и птица", "Овощи и зелень", "Молочные и яйца", etc.), "price" (estimated price in RUB). Calculate the total price proportionally based on these examples: 7 days for 3 people is approx. 6872 RUB; 5 days for 2 people is approx. 3920 RUB.
-All text must be in Russian. Generate simple, common recipes suitable for a Russian family, considering the specified restrictions.`
+- Dietary Goal: {settings.goal}
+- Known Allergies: {settings.allergies}.`,
+    rules: `The JSON object must strictly adhere to this structure: { "menu": [], "recipes": {}, "shoppingList": [] }.
+1.  **Menu**: Create a diverse and logical plan for {settings.days} days.
+    *   Each day object must contain: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }).
+    *   **No repeating main dishes**, except for intelligently scheduled **leftovers**. Plan 1-2 leftover meals for subsequent lunches to minimize cooking.
+    *   Breakfast and snacks should be simple and varied (e.g., oatmeal, yogurt, fruit, toast).
+
+2.  **Recipes**: A dictionary of recipe objects, where the key is a unique camelCase "recipeId".
+    *   Each recipe must contain: "name", "isProteinBased" (boolean, true for main lunch/dinner dishes), "ingredients" (an array of { "name", "quantity" }), and "steps" (an array of { "title", "description", "timer": integer in minutes }).
+    *   **Accurately calculate ingredient quantities** for {settings.people} people.
+    *   Only add a "timer" where active waiting is required (e.g., simmering for 20 minutes, baking for 30 minutes).
+
+3.  **Shopping List**: Consolidate ALL ingredients from ALL recipes into a single list.
+    *   Each item must contain: a unique kebab-case "id", "name", "quantity", "category" (from a standard list like "Мясо и птица", "Овощи и зелень", "Молочные продукты и яйца", etc.), and "price" (an estimated price in RUB).
+    *   Calculate the total price proportionally based on these examples: 7 days for 3 people is approximately 6872 RUB; 5 days for 2 people is approximately 3920 RUB.
+
+4.  **Content Rules**:
+    *   All text must be in **Russian**.
+    *   Generate simple, common, and appealing recipes suitable for a Russian family, strictly considering all specified restrictions and allergies.
+    *   The entire output must be a single, valid JSON object, ready for parsing.`
 };
 
 
@@ -121,8 +132,6 @@ async function init() {
         }
     }
     
-    DOM.aiModeToggle.checked = AppState.aiKeyMode === 'manual';
-    
     await initializeAI();
     renderApp();
     registerEventListeners();
@@ -138,50 +147,19 @@ function checkPwaInstallPrompt() {
     }
 }
 
-function checkPwaPrompt() {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    if (!isStandalone && !localStorage.getItem('pwaPromptShown')) {
-        setTimeout(() => DOM.pwaModal.classList.add('visible'), 5000);
-    }
-}
-
 async function initializeAI() {
-    let apiKey = null;
-    let success = false;
-    
-    DOM.manualApiKeyContainer.dataset.mode = AppState.aiKeyMode;
-
-    if (AppState.aiKeyMode === 'auto') {
-        try {
-            if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-                apiKey = process.env.API_KEY;
-                success = await verifyApiKey(apiKey, false); // Don't save env key
-                if (success) {
-                    updateAiStatus('ready-auto');
-                } else {
-                    updateAiStatus('unavailable-auto');
-                }
-            } else {
-                updateAiStatus('unavailable-auto');
-            }
-        } catch (e) {
-            updateAiStatus('unavailable-auto');
-        }
-    } else { // Manual mode
-        apiKey = AppState.apiKey;
-        if (apiKey) {
-            success = await verifyApiKey(apiKey, false); // verify without re-saving
-            if (success) {
-                updateAiStatus('ready-manual');
-            } else {
-                updateAiStatus('unavailable-manual-invalid');
-            }
+    const apiKey = AppState.apiKey;
+    if (apiKey) {
+        const success = await verifyApiKey(apiKey, false); // verify without re-saving
+        if (success) {
+            updateAiStatus('ready');
         } else {
-            updateAiStatus('unavailable-manual-empty');
+            updateAiStatus('unavailable-invalid');
         }
+    } else {
+        updateAiStatus('unavailable-empty');
     }
 }
-
 
 async function verifyApiKey(apiKey, saveToState = true) {
     if (!apiKey) return false;
@@ -210,35 +188,23 @@ function updateAiStatus(status) {
     let message = '';
     
     switch(status) {
-        case 'ready-auto':
-            DOM.globalSettingsBtn.classList.add('ai-ready-auto');
+        case 'ready':
+            DOM.globalSettingsBtn.classList.add('ai-ready');
             DOM.generateAiBtn.disabled = false;
-            DOM.aiConnectionStatus.classList.add('success-auto');
-            message = 'AI готов. Используется автоматический режим (ключ из GitHub).';
+            DOM.aiConnectionStatus.classList.add('success');
+            message = 'AI готов. Используется сохраненный ключ.';
             break;
-        case 'ready-manual':
-            DOM.globalSettingsBtn.classList.add('ai-ready-manual');
-            DOM.generateAiBtn.disabled = false;
-            DOM.aiConnectionStatus.classList.add('success-manual');
-            message = 'AI готов. Используется сохраненный вручную ключ.';
-            break;
-        case 'unavailable-auto':
+        case 'unavailable-invalid':
             DOM.globalSettingsBtn.classList.add('ai-unavailable');
             DOM.generateAiBtn.disabled = true;
             DOM.aiConnectionStatus.classList.add('error');
-            message = 'Авто-режим: Ключ не найден. Проверьте секреты репозитория (API_KEY) или включите ручной режим.';
+            message = 'Сохраненный ключ недействителен. Проверьте и сохраните его снова.';
             break;
-        case 'unavailable-manual-invalid':
-            DOM.globalSettingsBtn.classList.add('ai-unavailable');
-            DOM.generateAiBtn.disabled = true;
-            DOM.aiConnectionStatus.classList.add('error');
-            message = 'Ручной режим: Сохраненный ключ недействителен. Проверьте и сохраните его снова.';
-            break;
-        case 'unavailable-manual-empty':
+        case 'unavailable-empty':
              DOM.globalSettingsBtn.classList.add('ai-unavailable');
             DOM.generateAiBtn.disabled = true;
             DOM.aiConnectionStatus.classList.add('error');
-            message = 'Ручной режим: Введите API ключ для активации генерации.';
+            message = 'Введите API ключ для активации генерации.';
             break;
         case 'loading':
             DOM.generateAiBtn.disabled = true;
@@ -247,7 +213,6 @@ function updateAiStatus(status) {
     }
     DOM.aiConnectionStatus.textContent = message;
 }
-
 
 // --- STATE MANAGEMENT ---
 function getSerializableState() {
@@ -273,7 +238,6 @@ function loadStateFromLocalStorage() {
             Object.assign(AppState, parsedState);
             AppState.cookedMeals = AppState.cookedMeals || {};
             AppState.timers = AppState.timers || {};
-            AppState.aiKeyMode = AppState.aiKeyMode || 'auto';
             if (AppState.apiKey) {
                 DOM.apiKeyInput.value = AppState.apiKey;
             }
@@ -529,7 +493,7 @@ function renderShoppingList() {
         DOM.shoppingListContent.innerHTML = `<p>Список покупок пуст.</p>`; DOM.shoppingListSummary.innerHTML = ''; return;
     }
     const categories = AppState.shoppingList.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
-    const categoryOrder = ["Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"];
+    const categoryOrder = ["Мясо и птица", "Молочные продукты и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"];
     const itemsHtml = categoryOrder.map(category => categories[category] ? `
         <div class="shopping-category"><h3>${category}</h3>${categories[category].map(item => `
             <div class="shopping-item ${item.completed ? 'completed' : ''}" data-item-id="${item.id}">
@@ -537,10 +501,9 @@ function renderShoppingList() {
                 <div class="shopping-item-info"><span>${item.name}</span><div class="item-quantity">${item.quantity}</div></div>
             </div>`).join('')}</div>` : '').join('');
     
-    // Prepend the PWA prompt to the items list
-    DOM.shoppingListContent.innerHTML = DOM.pwaInstallPrompt.outerHTML + itemsHtml;
-    // Re-bind the dismiss button event listener as innerHTML removes it
-    document.getElementById('dismiss-pwa-prompt').addEventListener('click', () => {
+    const pwaPromptHtml = document.getElementById('pwa-install-prompt')?.outerHTML || '';
+    DOM.shoppingListContent.innerHTML = pwaPromptHtml + itemsHtml;
+    document.getElementById('dismiss-pwa-prompt')?.addEventListener('click', () => {
         document.getElementById('pwa-install-prompt').classList.add('hidden');
         localStorage.setItem('pwaInstallPromptDismissed', 'true');
     });
@@ -586,12 +549,6 @@ function registerEventListeners() {
     DOM.generateAiBtn.addEventListener('click', generationAction);
     DOM.loadDemoBtn.addEventListener('click', loadDefaultData);
     
-    DOM.aiModeToggle.addEventListener('change', (e) => {
-        AppState.aiKeyMode = e.target.checked ? 'manual' : 'auto';
-        saveStateToLocalStorage();
-        initializeAI();
-    });
-    
     DOM.verifyApiKeyBtn.addEventListener('click', async () => {
         const key = DOM.apiKeyInput.value.trim();
         const originalButtonText = DOM.verifyApiKeyBtn.textContent;
@@ -602,9 +559,9 @@ function registerEventListeners() {
         const success = await verifyApiKey(key, true);
         
         if (success) {
-            updateAiStatus('ready-manual');
+            updateAiStatus('ready');
         } else {
-            updateAiStatus('unavailable-manual-invalid');
+            updateAiStatus('unavailable-invalid');
         }
         
         DOM.verifyApiKeyBtn.disabled = false;
@@ -855,7 +812,7 @@ function createPrompt(settings) {
     };
 
     for (const key in replacements) {
-        const regex = new RegExp(key, 'g');
+        const regex = new RegExp(key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g');
         main = main.replace(regex, replacements[key]);
         rules = rules.replace(regex, replacements[key]);
     }
@@ -1053,8 +1010,8 @@ function startTimer(timerId) {
             alarmSound.play();
             showToast("Время вышло!");
         }
+        saveStateToLocalStorage();
     }, 1000);
-    saveStateToLocalStorage();
 }
 
 function pauseTimer(timerId) {
@@ -1102,7 +1059,7 @@ function getErrorMessage(error) {
     let fix = defaultFix;
     let link = null;
 
-    if (message.includes("Failed to fetch")) {
+    if (message.includes("Failed to fetch") || message.includes("ERR_CONNECTION_CLOSED")) {
         message = "Сетевая ошибка.";
         fix = "Не удалось подключиться к серверам Google. Проверьте ваше интернет-соединение, отключите VPN/прокси и попробуйте снова. Возможно, это временная проблема на стороне Google.";
         link = { text: "Проверить статус сервисов Google", url: "https://status.cloud.google.com/" };
@@ -1132,19 +1089,18 @@ function getErrorMessage(error) {
 async function runAiDiagnostics() {
     DOM.diagnosticsResults.innerHTML = '';
     DOM.diagnosticsResults.classList.add('visible');
-    const keyMode = AppState.aiKeyMode;
-    const key = (keyMode === 'manual') ? AppState.apiKey : (typeof process !== 'undefined' && process.env.API_KEY);
+    const key = AppState.apiKey;
 
     // Step 1: Key presence
     let step1Result = `<div class="diagnostic-step">
         <div class="step-title">Шаг 1: Проверка наличия ключа</div>`;
     if (key) {
         step1Result += `<div class="step-status success">УСПЕХ</div>
-            <div class="step-details">Ключ найден в режиме: <strong>${keyMode === 'manual' ? 'Ручной' : 'Автоматический'}</strong>.</div>`;
+            <div class="step-details">Ключ найден в локальном хранилище.</div>`;
     } else {
         step1Result += `<div class="step-status error">ПРОВАЛЕН</div>
-            <div class="step-details">Ключ не найден в режиме: <strong>${keyMode}</strong>.</div>
-            <div class="step-fix">${keyMode === 'auto' ? 'Убедитесь, что вы добавили секрет API_KEY в настройках репозитория GitHub.' : 'Введите и сохраните ваш API ключ вручную.'}</div>`;
+            <div class="step-details">Ключ не найден.</div>
+            <div class="step-fix">Введите и сохраните ваш API ключ в поле выше.</div>`;
     }
     step1Result += `</div>`;
     DOM.diagnosticsResults.innerHTML += step1Result;
