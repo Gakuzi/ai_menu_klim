@@ -93,17 +93,30 @@ function checkPwaPrompt() {
 }
 
 function initializeAI() {
-    try {
-        if (typeof process === 'undefined' || !process.env.API_KEY || process.env.API_KEY === '') {
-            throw new Error("API_KEY environment variable not set.");
-        }
-        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        
-        DOM.globalSettingsBtn.classList.remove('ai-unavailable');
-        DOM.globalSettingsBtn.classList.add('ai-ready');
-        DOM.generateAiBtn.disabled = false;
+    let apiKey = null;
+    // Safely check for the API key in a browser environment to prevent crashes.
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+        apiKey = process.env.API_KEY;
+    }
 
-    } catch (error) {
+    if (apiKey && apiKey !== '') {
+        try {
+            ai = new GoogleGenAI({ apiKey: apiKey });
+            // AI is ready, update UI
+            DOM.globalSettingsBtn.classList.remove('ai-unavailable');
+            DOM.globalSettingsBtn.classList.add('ai-ready');
+            DOM.generateAiBtn.disabled = false;
+            console.log("AI initialized successfully.");
+        } catch (error) {
+            // This would catch errors from the GoogleGenAI constructor itself
+            console.error("Error initializing GoogleGenAI:", error);
+            ai = null;
+            DOM.globalSettingsBtn.classList.remove('ai-ready');
+            DOM.globalSettingsBtn.classList.add('ai-unavailable');
+            DOM.generateAiBtn.disabled = true;
+        }
+    } else {
+        // API key is not available, update UI
         console.warn("Ключ API не настроен. Генерация с ИИ недоступна.");
         ai = null;
         DOM.globalSettingsBtn.classList.remove('ai-ready');
