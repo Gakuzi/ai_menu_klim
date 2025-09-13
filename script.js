@@ -1,7 +1,5 @@
 import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
 
-const API_KEY = 'AIzaSyAHXBqiRczF4uG0Tofjgxj5zc17UoQUZBA';
-
 const AppState = {
     settings: {},
     menu: [],
@@ -84,13 +82,16 @@ function checkPwaPrompt() {
 
 function initializeAI() {
     try {
-        ai = new GoogleGenAI({ apiKey: API_KEY });
+        if (!process.env.API_KEY) {
+            throw new Error("API_KEY environment variable not set.");
+        }
+        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         DOM.generateButton.textContent = "Сгенерировать меню";
     } catch (error) {
         console.error("Failed to initialize Gemini AI:", error);
         ai = null;
         DOM.generateButton.textContent = "Загрузить план по умолчанию";
-        alert("Не удалось инициализировать AI. Будет загружен план по умолчанию.");
+        alert("Не удалось инициализировать AI. Убедитесь, что API-ключ настроен в переменных окружения. Будет загружен план по умолчанию.");
     }
 }
 
