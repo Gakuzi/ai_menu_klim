@@ -1,9 +1,9 @@
-import { GoogleGenerativeAI } from "https://ga.jspm.io/npm:@google/generative-ai@0.15.0/dist/index.js";
+import { GoogleGenAI } from "https://esm.run/@google/genai";
+
+const API_KEY = 'AIzaSyAHXBqiRczF4uG0Tofjgxj5zc17UoQUZBA';
 
 const AppState = {
-    settings: {
-        apiKey: ''
-    },
+    settings: {},
     menu: [],
     recipes: {},
     shoppingList: [],
@@ -19,8 +19,6 @@ const DOM = {
     screens: document.querySelectorAll('.screen'),
     navButtons: document.querySelectorAll('.nav-btn'),
     settingsForm: document.getElementById('settings-form'),
-    apiKeyInput: document.getElementById('api-key-input'),
-    toggleApiKeyVisibility: document.getElementById('toggle-api-key-visibility'),
     peopleSlider: document.getElementById('people-slider'),
     peopleValue: document.getElementById('people-value'),
     generateButton: document.querySelector('#settings-form button[type="submit"]'),
@@ -71,7 +69,7 @@ let qrAnimation;
 function init() {
     loadStateFromLocalStorage();
     registerEventListeners();
-    initializeApiKey();
+    initializeAI();
     renderApp();
     checkPwaPrompt();
 }
@@ -83,20 +81,15 @@ function checkPwaPrompt() {
     }
 }
 
-function initializeApiKey() {
-    const apiKey = AppState.settings.apiKey;
-    if (apiKey) {
-        try {
-            ai = new GoogleGenerativeAI({ apiKey });
-            DOM.generateButton.textContent = "Сгенерировать меню";
-        } catch (error) {
-            console.error("Failed to initialize Gemini AI:", error);
-            ai = null;
-            DOM.generateButton.textContent = "Загрузить план по умолчанию";
-        }
-    } else {
+function initializeAI() {
+    try {
+        ai = new GoogleGenAI({ apiKey: API_KEY });
+        DOM.generateButton.textContent = "Сгенерировать меню";
+    } catch (error) {
+        console.error("Failed to initialize Gemini AI:", error);
         ai = null;
         DOM.generateButton.textContent = "Загрузить план по умолчанию";
+        alert("Не удалось инициализировать AI. Будет загружен план по умолчанию.");
     }
 }
 
@@ -120,7 +113,6 @@ function loadStateFromLocalStorage() {
 
 function updateSettingsFromForm() {
     AppState.settings = {
-        apiKey: DOM.apiKeyInput.value.trim(),
         people: DOM.peopleSlider.value,
         days: document.getElementById('days-select').value,
         protein: document.querySelector('input[name="protein"]:checked').value,
@@ -129,7 +121,6 @@ function updateSettingsFromForm() {
         allergies: document.getElementById('allergies-input').value,
     };
     saveStateToLocalStorage();
-    initializeApiKey();
 }
 
 
@@ -159,7 +150,6 @@ function renderApp() {
 function populateSettingsForm() {
     const { settings } = AppState;
     if (!settings) return;
-    DOM.apiKeyInput.value = settings.apiKey || '';
     DOM.peopleSlider.value = settings.people || 3;
     DOM.peopleValue.textContent = settings.people || 3;
     document.getElementById('days-select').value = settings.days || 7;
@@ -308,8 +298,6 @@ function renderPrintView() {
 function registerEventListeners() {
     DOM.navButtons.forEach(button => button.addEventListener('click', () => navigateTo(button.dataset.screen)));
     DOM.settingsForm.addEventListener('submit', e => { e.preventDefault(); updateSettingsFromForm(); handleGeneration(); });
-    DOM.apiKeyInput.addEventListener('input', updateSettingsFromForm);
-    DOM.toggleApiKeyVisibility.addEventListener('click', () => { const isPwd = DOM.apiKeyInput.type === 'password'; DOM.apiKeyInput.type = isPwd ? 'text' : 'password'; DOM.toggleApiKeyVisibility.classList.toggle('visible', !isPwd); });
     DOM.peopleSlider.addEventListener('input', e => { DOM.peopleValue.textContent = e.target.value; });
     DOM.regenerateMenuBtn.addEventListener('click', () => { if(confirm("Вы уверены? Текущее меню будет удалено.")) { updateSettingsFromForm(); handleGeneration(); } });
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
@@ -489,7 +477,7 @@ function tick() {
                     Object.assign(AppState, importedState);
                     saveStateToLocalStorage();
                     populateSettingsForm();
-                    initializeApiKey();
+                    initializeAI();
                     renderApp();
                     showToast("План успешно синхронизирован!");
                 } else { throw new Error("Invalid data"); }
@@ -539,7 +527,7 @@ function importState(event) {
                 Object.assign(AppState, importedState);
                 saveStateToLocalStorage();
                 populateSettingsForm();
-                initializeApiKey();
+                initializeAI();
                 renderApp();
                 showToast("Данные успешно импортированы!");
             } else { throw new Error("Invalid file format"); }
