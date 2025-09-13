@@ -749,6 +749,9 @@ function showToast(message, isError = false) {
     DOM.toast.classList.add('show');
     setTimeout(() => DOM.toast.classList.remove('show'), 3000);
 }
+const entityMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;' };
+function escapeHtml(string) { return String(string).replace(/[&<>"'`=\/]/g, s => entityMap[s]); }
+
 
 // --- SYNC & DATA MANAGEMENT ---
 async function sharePlanViaQR() {
@@ -890,26 +893,25 @@ async function runAiDiagnostics() {
         return;
     }
     
-    // Step 3: Complex Schema Call
-    const step3 = createDiagnosticStep('Шаг 3: Тест генерации со сложной схемой');
+    // Step 3: Real Generation Test with Response Display
+    const step3 = createDiagnosticStep('Шаг 3: Реальный тест генерации JSON');
     try {
-        await testAi.models.generateContent({
+        const testSchema = {
+            type: Type.OBJECT,
+            properties: {
+                recipeName: { type: Type.STRING },
+                ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: {type: Type.STRING}, quantity: {type: Type.STRING}}}}
+            }
+        };
+        const response = await testAi.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: 'Generate a single recipe object with id, name, ingredients array, and steps array based on the provided schema.',
-            config: { responseMimeType: "application/json", responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    id: { type: Type.STRING },
-                    name: { type: Type.STRING },
-                    ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: {type: Type.STRING}, quantity: {type: Type.STRING}}}},
-                    steps: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: {type: Type.STRING}, description: {type: Type.STRING}}}}
-                }
-            }},
+            contents: 'Generate a simple JSON object for an omelette recipe with a recipeName and a list of ingredients (name, quantity).',
+            config: { responseMimeType: "application/json", responseSchema: testSchema },
         });
-        updateDiagnosticStep(step3, 'success', 'Тест со сложной схемой JSON прошел успешно. AI готов к генерации меню.');
+        updateDiagnosticStep(step3, 'success', 'Тест генерации JSON прошел успешно. AI готов к работе.', null, null, response.text);
     } catch (error) {
         const { code, fix } = getErrorMessage(error);
-        updateDiagnosticStep(step3, 'error', 'Запрос со сложной схемой провалился.', code, fix);
+        updateDiagnosticStep(step3, 'error', 'Запрос на генерацию JSON провалился.', code, fix);
         return;
     }
 }
@@ -922,17 +924,20 @@ function createDiagnosticStep(title) {
     return stepDiv;
 }
 
-function updateDiagnosticStep(element, status, statusText, details = null, fix = null) {
+function updateDiagnosticStep(element, status, statusText, details = null, fix = null, aiResponse = null) {
     const statusEl = element.querySelector('.step-status');
     statusEl.textContent = status === 'success' ? `УСПЕШНО ✓` : `ПРОВАЛЕН ❌`;
     statusEl.className = `step-status ${status}`;
     
     let detailsHtml = `<p>${statusText}</p>`;
     if (details) {
-        detailsHtml += `<div class="step-details"><strong>Код ошибки:</strong> ${details}</div>`;
+        detailsHtml += `<div class="step-details"><strong>Код ошибки:</strong> ${escapeHtml(details)}</div>`;
     }
     if (fix) {
         detailsHtml += `<div class="step-fix"><strong>💡 Как исправить:</strong> ${fix}</div>`;
+    }
+    if (aiResponse) {
+        detailsHtml += `<div class="step-details"><strong>Ответ от AI:</strong></div><pre class="ai-response">${escapeHtml(aiResponse)}</pre>`;
     }
     element.innerHTML = `<div class="step-title">${element.querySelector('.step-title').textContent}</div>${statusEl.outerHTML}${detailsHtml}`;
 }
@@ -942,20 +947,23 @@ function getErrorMessage(error) {
     let fix = 'Попробуйте еще раз. Если ошибка повторяется, проверьте консоль разработчика для получения дополнительной информации.';
 
     if (code.includes('API key not valid')) {
-        code = '[400 Bad Request] API key not valid';
+        code = '[400 Bad Request] API_KEY_NOT_VALID';
         fix = 'Ваш ключ API недействителен. Убедитесь, что вы скопировали его правильно из Google AI Studio и что для него включен Gemini API.';
     } else if (code.includes('permission denied')) {
-        code = '[403 Forbidden] Permission Denied';
+        code = '[403 Forbidden] PERMISSION_DENIED';
         fix = 'Доступ запрещен. Убедитесь, что Gemini API включен для вашего проекта в Google Cloud и ключ API имеет необходимые разрешения.';
     } else if (code.includes('500') || code.includes('503')) {
         code = '[50x Server Error]';
         fix = 'Серверы Google временно недоступны. Это не ваша ошибка. Пожалуйста, попробуйте еще раз через несколько минут.';
     } else if (error instanceof TypeError && error.message.includes('fetch')) {
-         code = '[Network Error] Failed to fetch';
+         code = '[Network Error] FAILED_TO_FETCH';
          fix = 'Не удалось подключиться к серверам Google. Проверьте ваше интернет-соединение и убедитесь, что никакие расширения (например, AdBlock) не блокируют запросы к `generativelanguage.googleapis.com`.';
     } else if (code.includes('response did not match the schema')) {
-        code = '[Schema Mismatch]';
+        code = '[Schema Mismatch Error]';
         fix = 'Нейросеть вернула ответ, не соответствующий требуемому формату. Это может быть временной проблемой. Попробуйте сгенерировать меню еще раз.';
+    }  else if (code.includes('API key is invalid')) {
+        code = '[400 Bad Request] API_KEY_INVALID';
+        fix = 'Формат вашего ключа API неверный. Он должен начинаться с "AIzaSy". Проверьте, не скопировали ли вы лишние символы.';
     }
     
     return { code, fix };
