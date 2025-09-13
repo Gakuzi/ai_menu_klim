@@ -75,7 +75,7 @@
                         <label for="allergies-input">Аллергии (необязательно)</label>
                         <input type="text" id="allergies-input" placeholder="например: орехи, клейковина">
                     </div>
-                    <button type="submit" class="btn-primary">Сгенерировать меню</button>
+                    
                 </form>
 
                 <div class="data-management-section">
@@ -92,6 +92,9 @@
                     </div>
                 </div>
             </div>
+             <div class="footer-action">
+                <button type="submit" form="settings-form" class="btn-primary">Сгенерировать меню</button>
+            </div>
         </div>
 
         <!-- Экран Меню -->
@@ -100,7 +103,9 @@
                 <h1>Меню на неделю</h1>
                 <p class="subtitle">Ваш план питания готов</p>
             </header>
-            <div id="menu-content" class="screen-content"></div>
+            <div id="menu-content" class="screen-content">
+                <!-- Карточки меню будут рендериться здесь -->
+            </div>
              <div class="footer-action">
                 <button id="regenerate-menu" class="btn-secondary">Обновить меню</button>
             </div>

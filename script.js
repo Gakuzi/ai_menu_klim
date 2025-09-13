@@ -20,7 +20,7 @@ const DOM = {
     peopleValue: document.getElementById('people-value'),
     decrementPeopleBtn: document.getElementById('decrement-people'),
     incrementPeopleBtn: document.getElementById('increment-people'),
-    generateButton: document.querySelector('#settings-form button[type="submit"]'),
+    generateButton: document.querySelector('button[form="settings-form"]'),
     menuContent: document.getElementById('menu-content'),
     regenerateMenuBtn: document.getElementById('regenerate-menu'),
     recipesList: document.getElementById('recipes-list'),
@@ -67,9 +67,9 @@ let qrAnimation;
 
 function init() {
     loadStateFromLocalStorage();
-    registerEventListeners();
-    initializeAI();
+    initializeAI(); // Must be before render and listeners
     renderApp();
+    registerEventListeners();
     checkPwaPrompt();
 }
 
@@ -82,7 +82,6 @@ function checkPwaPrompt() {
 
 function initializeAI() {
     try {
-        // Безопасная проверка наличия process.env.API_KEY, чтобы избежать ошибок в браузере
         if (typeof process === 'undefined' || !process.env.API_KEY) {
             throw new Error("API_KEY environment variable not set.");
         }
@@ -91,7 +90,7 @@ function initializeAI() {
     } catch (error) {
         console.warn("Ключ API не настроен. Для генерации меню будет использоваться план по умолчанию.");
         ai = null;
-        DOM.generateButton.textContent = "Загрузить план по умолчанию";
+        if(DOM.generateButton) DOM.generateButton.textContent = "Загрузить демо-план";
     }
 }
 
@@ -111,12 +110,10 @@ function loadStateFromLocalStorage() {
         try {
             const parsedState = JSON.parse(savedState);
             Object.assign(AppState, parsedState);
-            if (!AppState.cookedMeals) {
-                AppState.cookedMeals = {};
-            }
+            AppState.cookedMeals = AppState.cookedMeals || {};
+            AppState.timers = AppState.timers || {};
         } catch (e) {
             console.error("Failed to parse state from localStorage, using defaults.", e);
-            // Очистка поврежденного состояния, чтобы предотвратить будущие ошибки
             localStorage.removeItem('familyMenuAppState');
         }
     }
@@ -144,6 +141,7 @@ function navigateTo(screenId) {
     const nextScreen = document.getElementById(screenId);
     if(nextScreen) {
       nextScreen.classList.add('active');
+      nextScreen.querySelector('.screen-content')?.scrollTo(0, 0);
     }
     
     DOM.navButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.screen === screenId));
@@ -166,7 +164,7 @@ function renderApp() {
 
 function populateSettingsForm() {
     const { settings } = AppState;
-    if (!settings) return;
+    if (!settings || Object.keys(settings).length === 0) return;
 
     const people = parseInt(settings.people || 3, 10);
     DOM.peopleValue.textContent = people;
@@ -186,18 +184,36 @@ function renderMenu() {
         return;
     }
     const mealTypes = { breakfast: 'Завтрак', snack1: 'Перекус', lunch: 'Обед', snack2: 'Полдник', dinner: 'Ужин' };
-    DOM.menuContent.innerHTML = `<div class="day-cards-container">${AppState.menu.map(day => `
-        <div class="day-card"><h3>${day.dayName}</h3><ul>${Object.keys(mealTypes).map(mealType => {
-            const meal = day[mealType];
-            let mealHtml;
-            if (typeof meal === 'object' && meal.recipeId) {
-                const isLeftover = meal.name.includes('(остатки)');
-                const isCooked = AppState.cookedMeals[meal.recipeId];
-                mealHtml = `<span class="clickable-meal ${isCooked ? 'cooked' : ''}" data-recipe-id="${meal.recipeId}">${meal.name.replace(' (остатки)', '')} ${isLeftover ? '<span class="leftover-icon">↻</span>' : ''} ${isCooked ? '✓' : ''}</span>`;
-            } else { mealHtml = `<span>${meal || '—'}</span>`; }
-            return `<li><span class="meal-type-label">${mealTypes[mealType]}</span>${mealHtml}</li>`;
-        }).join('')}</ul></div>`).join('')}</div>`;
+    DOM.menuContent.innerHTML = AppState.menu.map(day => `
+        <div class="day-card">
+            <h3>${day.dayName}</h3>
+            <ul>
+                ${Object.entries(mealTypes).map(([mealType, mealLabel]) => {
+                    const meal = day[mealType];
+                    let mealHtml;
+                    if (typeof meal === 'object' && meal.recipeId) {
+                        const isLeftover = meal.name.includes('(остатки)');
+                        const isCooked = AppState.cookedMeals[meal.recipeId];
+                        mealHtml = `<span class="meal-name clickable" data-recipe-id="${meal.recipeId}">
+                            ${meal.name.replace(' (остатки)', '')}
+                            ${isLeftover ? '<span class="leftover-icon">↻</span>' : ''}
+                            ${isCooked ? '<span class="cooked-icon">✓</span>' : ''}
+                        </span>`;
+                    } else {
+                        mealHtml = `<span class="meal-name">${meal || '—'}</span>`;
+                    }
+                    return `<li class="meal-item-wrapper">
+                        <div class="meal-item">
+                            <span class="meal-type-label">${mealLabel}</span>
+                            ${mealHtml}
+                        </div>
+                        <div class="recipe-quick-view" data-recipe-container="${meal.recipeId}"></div>
+                    </li>`;
+                }).join('')}
+            </ul>
+        </div>`).join('');
 }
+
 
 function renderRecipesList() {
     if (Object.keys(AppState.recipes).length === 0) {
@@ -323,7 +339,7 @@ function registerEventListeners() {
     DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
     DOM.regenerateMenuBtn.addEventListener('click', () => { if(confirm("Вы уверены? Текущее меню будет удалено.")) { updateSettingsFromForm(); handleGeneration(); } });
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
-    DOM.menuContent.addEventListener('click', e => { const cell = e.target.closest('.clickable-meal'); if(cell?.dataset.recipeId) renderRecipeDetail(cell.dataset.recipeId); });
+    DOM.menuContent.addEventListener('click', handleMenuClick);
     DOM.backToRecipesBtn.addEventListener('click', () => navigateTo('recipes-screen'));
     DOM.recipeActions.addEventListener('click', e => { if (e.target.id === 'mark-cooked-btn') toggleCookedStatus(AppState.currentRecipeId); });
     DOM.closePwaModal.addEventListener('click', () => { DOM.pwaModal.classList.remove('visible'); localStorage.setItem('pwaPromptShown', 'true'); });
@@ -369,6 +385,54 @@ function toggleCookedStatus(recipeId) {
     renderRecipeActions(recipeId);
     renderRecipesList(); // Re-render lists to show cooked status
     renderMenu();
+}
+
+function handleMenuClick(e) {
+    const target = e.target.closest('.meal-name.clickable');
+    if (!target) return;
+    
+    const recipeId = target.dataset.recipeId;
+    const container = document.querySelector(`.recipe-quick-view[data-recipe-container="${recipeId}"]`);
+    const isExpanded = container.classList.contains('expanded');
+
+    // Close all other quick views
+    document.querySelectorAll('.recipe-quick-view.expanded').forEach(el => {
+        if (el !== container) {
+            el.classList.remove('expanded');
+            el.innerHTML = '';
+            el.closest('.meal-item-wrapper').querySelector('.meal-name.clickable')?.classList.remove('expanded');
+        }
+    });
+
+    // Toggle current quick view
+    if (isExpanded) {
+        container.classList.remove('expanded');
+        target.classList.remove('expanded');
+        container.innerHTML = '';
+    } else {
+        const recipe = AppState.recipes[recipeId];
+        if (recipe) {
+            container.innerHTML = `
+                <div class="recipe-quick-view-ingredients">
+                    <h4>Ингредиенты</h4>
+                    <ul>${recipe.ingredients.map(ing => `<li>${ing.name} - ${ing.quantity}</li>`).join('')}</ul>
+                </div>
+                <div class="recipe-quick-view-steps">
+                    <h4>Шаги</h4>
+                    ${recipe.steps.map((step, index) => `
+                        <div class="step">
+                            <strong>Шаг ${index + 1}: ${step.title}</strong>
+                            <p>${step.description}</p>
+                            ${step.timer ? `<div class="timer-container" data-timer-id="${recipeId}-${index}"><div class="timer-display">00:00</div><div class="timer-controls"><button class="start-btn">Старт</button><button class="pause-btn" disabled>Пауза</button><button class="reset-btn">Сброс</button></div></div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            initializeTimersForStep(0); // Assuming quick view shows all steps, init all timers
+            container.classList.add('expanded');
+            target.classList.add('expanded');
+        }
+    }
 }
 
 function handleRecipeStepClick(e) {
@@ -463,9 +527,15 @@ async function handleGeneration() {
                 responseSchema: responseSchema,
             },
         });
-        const data = JSON.parse(response.text);
+        
+        let data;
+        try {
+            data = JSON.parse(response.text);
+        } catch (parseError) {
+            console.error("JSON parsing error:", parseError);
+            throw new Error("Не удалось обработать ответ от сервера. Пожалуйста, попробуйте снова.");
+        }
 
-        // Convert recipes array into an object for easier lookup
         const recipesObject = data.recipes.reduce((acc, recipe) => {
             acc[recipe.id] = recipe;
             return acc;
@@ -479,12 +549,16 @@ async function handleGeneration() {
         saveStateToLocalStorage();
         renderApp();
         navigateTo('menu-screen');
-    } catch (error) { console.error("Error generating menu:", error); alert("Произошла ошибка при генерации меню. Попробуйте снова.");
-    } finally { DOM.loaderModal.classList.remove('visible'); }
+    } catch (error) { 
+        console.error("Error generating menu:", error); 
+        showToast(error.message || "Произошла ошибка при генерации меню.", true);
+    } finally { 
+        DOM.loaderModal.classList.remove('visible'); 
+    }
 }
 
 function loadDefaultData() {
-    showToast("API ключ не найден. Загружен план по умолчанию.");
+    showToast("API ключ не найден. Загружен демо-план.");
     Object.assign(AppState, defaultPlan);
     AppState.shoppingList = AppState.shoppingList.map(item => ({...item, completed: false}));
     AppState.cookedMeals = AppState.cookedMeals || {};
@@ -495,13 +569,14 @@ function loadDefaultData() {
 
 function createPrompt(settings) {
     const priceReference = `(reference: 7 days for 3 people is ~6872 RUB).`;
-    return `You are a professional and warm family meal planning assistant. Your task is to generate a complete meal plan based on user preferences. Provide the output ONLY in a single valid JSON object format, without any markdown formatting. The JSON must have this structure: { "menu": [], "recipes": [], "shoppingList": [] }. User Preferences: - People: ${settings.people} - Days: ${settings.days} - Protein: ${settings.protein} - Restrictions: ${settings.restrictions.join(', ')} - Goal: ${settings.goal} - Allergies: ${settings.allergies || 'None'}. Rules: 1. Menu: Array for ${settings.days} days. Each day object needs: "dayName" (e.g., "Понедельник"), "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals. 2. Recipes: An array of recipe objects. Each recipe must have a unique camelCase "id". Each recipe needs: "id", "name", "isProteinBased" (boolean), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes, optional }). 3. Shopping List: Consolidate all ingredients. Each item needs: "id" (unique kebab-case), "name", "quantity", "category" (from: "Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"), "price" (estimated price in RUB, proportional to people/days ${priceReference}). All text must be in Russian. Generate simple, common recipes suitable for a Russian family, with a cozy and appealing tone.`;
+    return `Generate a complete family meal plan as a single valid JSON object, without markdown. Structure: { "menu": [], "recipes": [], "shoppingList": [] }. Preferences: - People: ${settings.people} - Days: ${settings.days} - Protein: ${settings.protein} - Restrictions: ${settings.restrictions.join(', ')} - Goal: ${settings.goal} - Allergies: ${settings.allergies || 'None'}. Rules: 1. Menu: Array for ${settings.days} days. Each day object needs: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals. 2. Recipes: Array of objects. Each needs: unique camelCase "id", "name", "isProteinBased" (boolean), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes, optional }). 3. Shopping List: Consolidate all ingredients. Each item needs: unique kebab-case "id", "name", "quantity", "category" (from: "Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"), "price" (estimated price in RUB, proportional to people/days ${priceReference}). All text must be in Russian. Generate simple, common recipes suitable for a Russian family.`;
 }
 
 
 // --- UTILITIES ---
-function showToast(message) {
+function showToast(message, isError = false) {
     DOM.toast.textContent = message;
+    DOM.toast.style.backgroundColor = isError ? 'var(--warning-accent)' : 'var(--success-accent)';
     DOM.toast.classList.add('show');
     setTimeout(() => DOM.toast.classList.remove('show'), 3000);
 }
