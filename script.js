@@ -83,14 +83,14 @@ const defaultPrompts = {
 - Restrictions: {settings.restrictions}
 - Dietary Goal: {settings.goal}
 - Known Allergies: {settings.allergies}.`,
-    rules: `The JSON object must strictly adhere to this structure: { "menu": [], "recipes": {}, "shoppingList": [] }.
+    rules: `The JSON object must strictly adhere to this structure: { "menu": [], "recipes": [], "shoppingList": [] }.
 1.  **Menu**: Create a diverse and logical plan for {settings.days} days.
     *   Each day object must contain: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }).
     *   **No repeating main dishes**, except for intelligently scheduled **leftovers**. Plan 1-2 leftover meals for subsequent lunches to minimize cooking.
     *   Breakfast and snacks should be simple and varied (e.g., oatmeal, yogurt, fruit, toast).
 
-2.  **Recipes**: A dictionary of recipe objects, where the key is a unique camelCase "recipeId".
-    *   Each recipe must contain: "name", "isProteinBased" (boolean, true for main lunch/dinner dishes), "ingredients" (an array of { "name", "quantity" }), and "steps" (an array of { "title", "description", "timer": integer in minutes }).
+2.  **Recipes**: An array of recipe objects.
+    *   Each recipe object must contain: a unique camelCase "recipeId", "name", "isProteinBased" (boolean, true for main lunch/dinner dishes), "ingredients" (an array of { "name", "quantity" }), and "steps" (an array of { "title", "description", "timer": integer in minutes }).
     *   **Accurately calculate ingredient quantities** for {settings.people} people.
     *   Only add a "timer" where active waiting is required (e.g., simmering for 20 minutes, baking for 30 minutes).
 
@@ -719,15 +719,40 @@ const responseSchema = {
                     dayName: { type: Type.STRING },
                     breakfast: { type: Type.STRING },
                     snack1: { type: Type.STRING },
-                    lunch: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING } } },
+                    lunch: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING } }, required: ['name', 'recipeId'] },
                     snack2: { type: Type.STRING },
-                    dinner: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING } } }
-                }
+                    dinner: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING } }, required: ['name', 'recipeId'] }
+                },
+                required: ['dayName', 'breakfast', 'snack1', 'lunch', 'snack2', 'dinner']
             }
         },
         recipes: {
-            type: Type.OBJECT,
-            properties: {}
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    recipeId: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    isProteinBased: { type: Type.BOOLEAN },
+                    ingredients: { 
+                        type: Type.ARRAY, 
+                        items: { 
+                            type: Type.OBJECT, 
+                            properties: { name: { type: Type.STRING }, quantity: { type: Type.STRING } }, 
+                            required: ['name', 'quantity'] 
+                        } 
+                    },
+                    steps: { 
+                        type: Type.ARRAY, 
+                        items: { 
+                            type: Type.OBJECT, 
+                            properties: { title: { type: Type.STRING }, description: { type: Type.STRING }, timer: { type: Type.INTEGER } }, 
+                            required: ['title', 'description'] 
+                        } 
+                    }
+                },
+                required: ['recipeId', 'name', 'isProteinBased', 'ingredients', 'steps']
+            }
         },
         shoppingList: {
             type: Type.ARRAY,
@@ -739,10 +764,12 @@ const responseSchema = {
                     quantity: { type: Type.STRING },
                     category: { type: Type.STRING },
                     price: { type: Type.NUMBER }
-                }
+                },
+                required: ['id', 'name', 'quantity', 'category', 'price']
             }
         }
-    }
+    },
+    required: ['menu', 'recipes', 'shoppingList']
 };
 
 async function handleGeneration() {
@@ -765,13 +792,15 @@ async function handleGeneration() {
         DOM.loaderStatus.innerHTML = "Обработка ответа...";
 
         const data = JSON.parse(response.text);
-
-        if (!data.recipes || typeof data.recipes !== 'object') {
-           throw new Error("Invalid format: 'recipes' should be an object/dictionary.");
-        }
         
+        // Convert recipes array to an object/dictionary
+        const recipesObject = data.recipes.reduce((acc, recipe) => {
+            acc[recipe.recipeId] = recipe;
+            return acc;
+        }, {});
+
         AppState.menu = data.menu;
-        AppState.recipes = data.recipes;
+        AppState.recipes = recipesObject;
         AppState.shoppingList = data.shoppingList.map(item => ({...item, completed: false}));
         AppState.cookedMeals = {};
         AppState.timers = {};
