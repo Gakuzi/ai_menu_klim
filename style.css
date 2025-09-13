@@ -43,7 +43,7 @@ body::before {
     left: -50%;
     width: 200%;
     height: 200%;
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800"><g fill-opacity="0.03" fill="%238B5E3C"><circle cx="400" cy="400" r="400"/><circle cx="100" cy="100" r="100"/></g></svg>');
+    background-image: radial-gradient(circle, rgba(240, 237, 231, 0.8) 10%, rgba(249, 247, 244, 0) 70%);
     animation: slow-rotate 60s linear infinite;
     z-index: -1;
     opacity: 0.5;
