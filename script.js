@@ -59,6 +59,8 @@ const DOM = {
     aiConnectionStatus: document.getElementById('ai-connection-status'),
     manualApiKeyContainer: document.getElementById('manual-api-key-container').parentElement, // ai-connection-section
     aiModeToggle: document.getElementById('ai-mode-toggle'),
+    runDiagnosticsBtn: document.getElementById('run-diagnostics-btn'),
+    diagnosticsResults: document.getElementById('diagnostics-results'),
 };
 
 const defaultPlan = {
@@ -117,7 +119,6 @@ async function initializeAI() {
                 if (success) {
                     updateAiStatus('ready-auto');
                 } else {
-                    // This case is unlikely if the key exists but is wrong
                     updateAiStatus('unavailable-auto');
                 }
             } else {
@@ -555,6 +556,7 @@ function registerEventListeners() {
         DOM.verifyApiKeyBtn.textContent = originalButtonText;
     });
 
+    DOM.runDiagnosticsBtn.addEventListener('click', runAiDiagnostics);
     DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
     DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
@@ -717,7 +719,8 @@ async function handleGeneration() {
         renderApp();
     } catch (error) { 
         console.error("Error generating menu:", error); 
-        showToast(error.message || "Ошибка при генерации. Проверьте ключ и попробуйте снова.", true);
+        const errorMessage = getErrorMessage(error);
+        showToast(`Ошибка генерации: ${errorMessage.fix}`, true);
     } finally { 
         DOM.loaderModal.classList.remove('visible'); 
     }
@@ -856,6 +859,106 @@ function importState(event) {
         finally { DOM.importFileInput.value = ''; }
     };
     reader.readAsText(file);
+}
+
+// --- AI Diagnostics ---
+async function runAiDiagnostics() {
+    DOM.diagnosticsResults.innerHTML = '';
+    DOM.diagnosticsResults.classList.add('visible');
+    
+    let apiKey = AppState.aiKeyMode === 'manual' ? AppState.apiKey : (typeof process !== 'undefined' ? process.env.API_KEY : null);
+    
+    // Step 1: Key Check
+    const step1 = createDiagnosticStep('Шаг 1: Проверка наличия ключа');
+    if (apiKey) {
+        updateDiagnosticStep(step1, 'success', `Ключ найден в режиме "${AppState.aiKeyMode}".`);
+    } else {
+        updateDiagnosticStep(step1, 'error', 'Ключ API не найден.', 'Ключ не был предоставлен ни в ручном режиме, ни через переменные окружения (GitHub Secrets).', 'Переключитесь в ручной режим и введите ключ, либо настройте секрет `API_KEY` в вашем репозитории.');
+        return;
+    }
+
+    const testAi = new GoogleGenAI({ apiKey });
+    
+    // Step 2: Basic API Call
+    const step2 = createDiagnosticStep('Шаг 2: Базовый тест API');
+    try {
+        await testAi.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
+        updateDiagnosticStep(step2, 'success', 'Базовый запрос к API успешно выполнен. Ключ действителен.');
+    } catch (error) {
+        const { code, fix } = getErrorMessage(error);
+        updateDiagnosticStep(step2, 'error', 'Базовый запрос к API провалился.', code, fix);
+        return;
+    }
+    
+    // Step 3: Complex Schema Call
+    const step3 = createDiagnosticStep('Шаг 3: Тест генерации со сложной схемой');
+    try {
+        await testAi.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: 'Generate a single recipe object with id, name, ingredients array, and steps array based on the provided schema.',
+            config: { responseMimeType: "application/json", responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: {type: Type.STRING}, quantity: {type: Type.STRING}}}},
+                    steps: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: {type: Type.STRING}, description: {type: Type.STRING}}}}
+                }
+            }},
+        });
+        updateDiagnosticStep(step3, 'success', 'Тест со сложной схемой JSON прошел успешно. AI готов к генерации меню.');
+    } catch (error) {
+        const { code, fix } = getErrorMessage(error);
+        updateDiagnosticStep(step3, 'error', 'Запрос со сложной схемой провалился.', code, fix);
+        return;
+    }
+}
+
+function createDiagnosticStep(title) {
+    const stepDiv = document.createElement('div');
+    stepDiv.className = 'diagnostic-step';
+    stepDiv.innerHTML = `<div class="step-title">${title}</div><div class="step-status">В процессе...</div>`;
+    DOM.diagnosticsResults.appendChild(stepDiv);
+    return stepDiv;
+}
+
+function updateDiagnosticStep(element, status, statusText, details = null, fix = null) {
+    const statusEl = element.querySelector('.step-status');
+    statusEl.textContent = status === 'success' ? `УСПЕШНО ✓` : `ПРОВАЛЕН ❌`;
+    statusEl.className = `step-status ${status}`;
+    
+    let detailsHtml = `<p>${statusText}</p>`;
+    if (details) {
+        detailsHtml += `<div class="step-details"><strong>Код ошибки:</strong> ${details}</div>`;
+    }
+    if (fix) {
+        detailsHtml += `<div class="step-fix"><strong>💡 Как исправить:</strong> ${fix}</div>`;
+    }
+    element.innerHTML = `<div class="step-title">${element.querySelector('.step-title').textContent}</div>${statusEl.outerHTML}${detailsHtml}`;
+}
+
+function getErrorMessage(error) {
+    let code = error.message || 'Неизвестная ошибка';
+    let fix = 'Попробуйте еще раз. Если ошибка повторяется, проверьте консоль разработчика для получения дополнительной информации.';
+
+    if (code.includes('API key not valid')) {
+        code = '[400 Bad Request] API key not valid';
+        fix = 'Ваш ключ API недействителен. Убедитесь, что вы скопировали его правильно из Google AI Studio и что для него включен Gemini API.';
+    } else if (code.includes('permission denied')) {
+        code = '[403 Forbidden] Permission Denied';
+        fix = 'Доступ запрещен. Убедитесь, что Gemini API включен для вашего проекта в Google Cloud и ключ API имеет необходимые разрешения.';
+    } else if (code.includes('500') || code.includes('503')) {
+        code = '[50x Server Error]';
+        fix = 'Серверы Google временно недоступны. Это не ваша ошибка. Пожалуйста, попробуйте еще раз через несколько минут.';
+    } else if (error instanceof TypeError && error.message.includes('fetch')) {
+         code = '[Network Error] Failed to fetch';
+         fix = 'Не удалось подключиться к серверам Google. Проверьте ваше интернет-соединение и убедитесь, что никакие расширения (например, AdBlock) не блокируют запросы к `generativelanguage.googleapis.com`.';
+    } else if (code.includes('response did not match the schema')) {
+        code = '[Schema Mismatch]';
+        fix = 'Нейросеть вернула ответ, не соответствующий требуемому формату. Это может быть временной проблемой. Попробуйте сгенерировать меню еще раз.';
+    }
+    
+    return { code, fix };
 }
 
 // --- Timer Functions ---

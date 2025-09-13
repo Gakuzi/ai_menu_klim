@@ -710,6 +710,59 @@ select {
     grid-column: span 2;
 }
 
+/* Diagnostics Section */
+.diagnostics-section {
+    margin-top: 1.5rem;
+}
+
+.diagnostics-results-container {
+    margin-top: 1rem;
+    background-color: rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1rem;
+    font-size: 0.9rem;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+}
+.diagnostics-results-container.visible {
+    max-height: 500px;
+    padding: 1rem;
+}
+.diagnostic-step {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.diagnostic-step:last-child {
+    border-bottom: none;
+}
+.diagnostic-step .step-title {
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+.diagnostic-step .step-status {
+    font-weight: bold;
+}
+.diagnostic-step .step-status.success { color: var(--success-accent); }
+.diagnostic-step .step-status.error { color: var(--warning-accent); }
+.diagnostic-step .step-details {
+    margin-top: 0.5rem;
+    background-color: var(--bg-color);
+    padding: 0.5rem;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+.diagnostic-step .step-fix {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 8px;
+    background-color: rgba(212, 163, 115, 0.1);
+}
+
+
 /* Toggle Switch */
 .switch {
     position: relative;
