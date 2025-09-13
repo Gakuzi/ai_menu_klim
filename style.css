@@ -247,7 +247,7 @@ body::before {
     color: var(--text-color);
 }
 
-select, input[type="text"], input[type="password"] {
+select, input[type="text"], input[type="password"], textarea {
     width: 100%;
     padding: 1rem 1.25rem;
     border: 1px solid var(--border-color);
@@ -256,6 +256,14 @@ select, input[type="text"], input[type="password"] {
     font-family: var(--font-family-body);
     background-color: var(--card-bg);
     -webkit-appearance: none;
+    transition: border-color 0.3s;
+}
+textarea {
+    resize: vertical;
+}
+select:focus, input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--secondary-accent);
 }
 
 select {
@@ -843,6 +851,7 @@ input:checked + .slider:before {
     background-color: var(--card-bg); padding: 2rem; border-radius: var(--border-radius);
     width: 90%; max-width: 400px; text-align: center;
     box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    position: relative;
 }
 .modal-content h3 { font-family: var(--font-family-heading); font-size: 18pt; margin-bottom: 1rem; }
 .modal-content ol { text-align: left; margin: 1.5rem 0 1.5rem 1rem; }
@@ -891,6 +900,45 @@ input:checked + .slider:before {
     font-family: var(--font-family-heading); font-weight: 600;
 }
 .toast.show { top: 20px; }
+
+/* Prompts Modal */
+#prompts-modal .modal-content {
+    max-width: 500px;
+    text-align: left;
+}
+.modal-subtitle {
+    font-size: 0.9rem;
+    color: var(--subtitle-color);
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.prompts-editor .form-group {
+    margin-bottom: 1.5rem;
+}
+.prompts-editor label {
+    font-weight: 600;
+    font-family: var(--font-family-heading);
+}
+.modal-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+.close-modal-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: var(--border-color);
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    font-size: 1.2rem;
+    color: var(--subtitle-color);
+    cursor: pointer;
+}
+
 
 /* --- Стили для печати --- */
 @media print {

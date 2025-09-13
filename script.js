@@ -4,6 +4,10 @@ const AppState = {
     apiKey: null,
     aiKeyMode: 'auto', // 'auto' or 'manual'
     settings: {},
+    prompts: {
+        main: '',
+        rules: ''
+    },
     menu: [],
     recipes: {},
     shoppingList: [],
@@ -61,7 +65,30 @@ const DOM = {
     aiModeToggle: document.getElementById('ai-mode-toggle'),
     runDiagnosticsBtn: document.getElementById('run-diagnostics-btn'),
     diagnosticsResults: document.getElementById('diagnostics-results'),
+    editPromptsBtn: document.getElementById('edit-prompts-btn'),
+    promptsModal: document.getElementById('prompts-modal'),
+    closePromptsModal: document.getElementById('close-prompts-modal'),
+    savePromptsBtn: document.getElementById('save-prompts-btn'),
+    resetPromptsBtn: document.getElementById('reset-prompts-btn'),
+    promptMainInput: document.getElementById('prompt-main-input'),
+    promptRulesInput: document.getElementById('prompt-rules-input'),
 };
+
+const defaultPrompts = {
+    main: `Generate a complete family meal plan as a single valid JSON object, without markdown, based on these preferences:
+- People: {settings.people}
+- Days: {settings.days}
+- Protein: {settings.protein}
+- Restrictions: {settings.restrictions}
+- Goal: {settings.goal}
+- Allergies: {settings.allergies}.`,
+    rules: `The JSON object must strictly follow this structure: { "menu": [], "recipes": [], "shoppingList": [] }.
+1. Menu: Array for {settings.days} days. Each day object needs: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals to reduce cooking time.
+2. Recipes: Array of recipe objects. Each needs: a unique camelCase "id", "name", "isProteinBased" (boolean for main dishes), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes (optional) }).
+3. Shopping List: Consolidate ALL ingredients from ALL recipes. Each item needs: a unique kebab-case "id", "name", "quantity", "category" (from a predefined list), "price" (estimated price in RUB, proportional to people/days, using this reference: 7 days for 3 people is ~6872 RUB).
+All text must be in Russian. Generate simple, common recipes suitable for a Russian family.`
+};
+
 
 const defaultPlan = {
   menu: [{"dayName":"Понедельник","breakfast":"Овсяная каша с ягодами","snack1":"Яблоко","lunch":{"name":"Куриный суп с лапшой","recipeId":"chickenNoodleSoup"},"snack2":"Йогурт","dinner":{"name":"Гречка с тефтелями","recipeId":"buckwheatMeatballs"}},{"dayName":"Вторник","breakfast":"Сырники со сметаной","snack1":"Банан","lunch":{"name":"Куриный суп (остатки)","recipeId":"chickenNoodleSoup"},"snack2":"Горсть орехов","dinner":{"name":"Картофельное пюре с котлетами","recipeId":"mashedPotatoesCutlets"}},{"dayName":"Среда","breakfast":"Яичница с тостами","snack1":"Апельсин","lunch":{"name":"Гречка с тефтелями (остатки)","recipeId":"buckwheatMeatballs"},"snack2":"Творог","dinner":{"name":"Паста болоньезе","recipeId":"pastaBolognese"}}],
@@ -237,13 +264,19 @@ function loadStateFromLocalStorage() {
             if (AppState.apiKey) {
                 DOM.apiKeyInput.value = AppState.apiKey;
             }
+            if (!AppState.prompts || !AppState.prompts.main) {
+                AppState.prompts = { ...defaultPrompts };
+            }
             Object.values(AppState.timers).forEach(timer => {
                 if(timer.running) timer.interval = null; 
             });
         } catch (e) {
             console.error("Failed to parse state, using defaults.", e);
             localStorage.removeItem('familyMenuAppState');
+            AppState.prompts = { ...defaultPrompts };
         }
+    } else {
+        AppState.prompts = { ...defaultPrompts };
     }
     populateSettingsForm();
 }
@@ -577,6 +610,10 @@ function registerEventListeners() {
     DOM.recipeStepsContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
     DOM.recipeStepsContainer.addEventListener('touchmove', handleTouchMove, { passive: true });
     DOM.recipeStepsContainer.addEventListener('touchend', handleTouchEnd);
+    DOM.editPromptsBtn.addEventListener('click', openPromptsEditor);
+    DOM.closePromptsModal.addEventListener('click', () => DOM.promptsModal.classList.remove('visible'));
+    DOM.savePromptsBtn.addEventListener('click', savePrompts);
+    DOM.resetPromptsBtn.addEventListener('click', resetPrompts);
     
     DOM.shoppingListContent.addEventListener('click', e => {
         const itemElement = e.target.closest('.shopping-item');
@@ -686,7 +723,57 @@ function handleTouchEnd() {
 }
 
 // --- API & GENERATION LOGIC ---
-const responseSchema = {type:Type.OBJECT,properties:{menu:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{dayName:{type:Type.STRING},breakfast:{type:Type.STRING},snack1:{type:Type.STRING},lunch:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},snack2:{type:Type.STRING},dinner:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},},},},recipes:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},isProteinBased:{type:Type.BOOLEAN},ingredients:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{name:{type:Type.STRING},quantity:{type:Type.STRING},},},},steps:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{title:{type:Type.STRING},description:{type:Type.STRING},timer:{type:Type.INTEGER},},},},},},},shoppingList:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},quantity:{type:Type.STRING},category:{type:Type.STRING},price:{type:Type.NUMBER},},},},},};
+const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+        menu: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    dayName: { type: Type.STRING },
+                    breakfast: { type: Type.STRING },
+                    snack1: { type: Type.STRING },
+                    lunch: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING } } },
+                    snack2: { type: Type.STRING },
+                    dinner: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING } } }
+                }
+            }
+        },
+        recipes: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    isProteinBased: { type: Type.BOOLEAN },
+                    ingredients: {
+                        type: Type.ARRAY,
+                        items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, quantity: { type: Type.STRING } } }
+                    },
+                    steps: {
+                        type: Type.ARRAY,
+                        items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING }, timer: { type: Type.INTEGER, nullable: true } } }
+                    }
+                }
+            }
+        },
+        shoppingList: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    quantity: { type: Type.STRING },
+                    category: { type: Type.STRING },
+                    price: { type: Type.NUMBER }
+                }
+            }
+        }
+    }
+};
 
 async function handleGeneration() {
     if (!ai) { showToast("Генерация недоступна. Проверьте API ключ в настройках.", true); return; }
@@ -738,9 +825,52 @@ function loadDefaultData() {
 }
 
 function createPrompt(settings) {
-    const priceReference = `(reference: 7 days for 3 people is ~6872 RUB).`;
-    return `Generate a complete family meal plan as a single valid JSON object, without markdown. Structure: { "menu": [], "recipes": [], "shoppingList": [] }. Preferences: - People: ${settings.people} - Days: ${settings.days} - Protein: ${settings.protein} - Restrictions: ${settings.restrictions.join(', ')} - Goal: ${settings.goal} - Allergies: ${settings.allergies || 'None'}. Rules: 1. Menu: Array for ${settings.days} days. Each day object needs: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals. 2. Recipes: Array of objects. Each needs: unique camelCase "id", "name", "isProteinBased" (boolean), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes, optional }). 3. Shopping List: Consolidate all ingredients. Each item needs: unique kebab-case "id", "name", "quantity", "category" (from: "Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"), "price" (estimated price in RUB, proportional to people/days ${priceReference}). All text must be in Russian. Generate simple, common recipes suitable for a Russian family.`;
+    let main = AppState.prompts.main;
+    let rules = AppState.prompts.rules;
+
+    const replacements = {
+        '{settings.people}': settings.people,
+        '{settings.days}': settings.days,
+        '{settings.protein}': settings.protein,
+        '{settings.restrictions}': settings.restrictions.join(', ') || 'None',
+        '{settings.goal}': settings.goal,
+        '{settings.allergies}': settings.allergies || 'None',
+    };
+
+    for (const key in replacements) {
+        const regex = new RegExp(key, 'g');
+        main = main.replace(regex, replacements[key]);
+        rules = rules.replace(regex, replacements[key]);
+    }
+    
+    return `${main}\n\n${rules}`;
 }
+
+// --- PROMPTS MANAGEMENT ---
+function openPromptsEditor() {
+    DOM.promptMainInput.value = AppState.prompts.main;
+    DOM.promptRulesInput.value = AppState.prompts.rules;
+    DOM.promptsModal.classList.add('visible');
+}
+
+function savePrompts() {
+    AppState.prompts.main = DOM.promptMainInput.value;
+    AppState.prompts.rules = DOM.promptRulesInput.value;
+    saveStateToLocalStorage();
+    showToast("Промты успешно сохранены!");
+    DOM.promptsModal.classList.remove('visible');
+}
+
+function resetPrompts() {
+    if (confirm("Вы уверены, что хотите сбросить промты до значений по умолчанию?")) {
+        AppState.prompts = { ...defaultPrompts };
+        DOM.promptMainInput.value = AppState.prompts.main;
+        DOM.promptRulesInput.value = AppState.prompts.rules;
+        saveStateToLocalStorage();
+        showToast("Промты сброшены.");
+    }
+}
+
 
 // --- UTILITIES ---
 function showToast(message, isError = false) {
@@ -960,7 +1090,7 @@ function getErrorMessage(error) {
          fix = 'Не удалось подключиться к серверам Google. Проверьте ваше интернет-соединение и убедитесь, что никакие расширения (например, AdBlock) не блокируют запросы к `generativelanguage.googleapis.com`.';
     } else if (code.includes('response did not match the schema')) {
         code = '[Schema Mismatch Error]';
-        fix = 'Нейросеть вернула ответ, не соответствующий требуемому формату. Это может быть временной проблемой. Попробуйте сгенерировать меню еще раз.';
+        fix = 'Нейросеть вернула ответ, не соответствующий требуемому формату. Это может быть временной проблемой. Попробуйте сгенерировать меню еще раз или проверьте/измените промты в настройках.';
     }  else if (code.includes('API key is invalid')) {
         code = '[400 Bad Request] API_KEY_INVALID';
         fix = 'Формат вашего ключа API неверный. Он должен начинаться с "AIzaSy". Проверьте, не скопировали ли вы лишние символы.';
