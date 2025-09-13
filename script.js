@@ -14,6 +14,7 @@ const AppState = {
 
 const DOM = {
     container: document.getElementById('app-container'),
+    globalSettingsBtn: document.getElementById('global-settings-btn'),
     screens: document.querySelectorAll('.screen'),
     navButtons: document.querySelectorAll('.nav-btn'),
     settingsForm: document.getElementById('settings-form'),
@@ -22,7 +23,6 @@ const DOM = {
     incrementPeopleBtn: document.getElementById('increment-people'),
     generateButton: document.querySelector('button[form="settings-form"]'),
     menuContent: document.getElementById('menu-content'),
-    regenerateMenuBtn: document.getElementById('regenerate-menu'),
     recipesList: document.getElementById('recipes-list'),
     recipeDetailScreen: document.getElementById('recipe-detail-screen'),
     recipeTitleDetail: document.getElementById('recipe-title-detail'),
@@ -32,6 +32,7 @@ const DOM = {
     shoppingListContent: document.getElementById('shopping-list-content'),
     shoppingListSummary: document.getElementById('shopping-list-summary'),
     printContent: document.getElementById('print-content'),
+    printBtn: document.getElementById('print-btn'),
     loaderModal: document.getElementById('loader-modal'),
     toast: document.getElementById('toast-notification'),
     pwaModal: document.getElementById('pwa-modal'),
@@ -67,7 +68,17 @@ let qrAnimation;
 
 function init() {
     loadStateFromLocalStorage();
-    initializeAI(); // Must be before render and listeners
+    
+    if (!AppState.menu || AppState.menu.length === 0) {
+        AppState.activeScreen = 'settings-screen';
+    } else {
+        const validScreens = ['menu-screen', 'recipes-screen', 'shopping-list-screen'];
+        if (!validScreens.includes(AppState.activeScreen)) {
+            AppState.activeScreen = 'menu-screen';
+        }
+    }
+
+    initializeAI(); 
     renderApp();
     registerEventListeners();
     checkPwaPrompt();
@@ -145,21 +156,44 @@ function navigateTo(screenId) {
     }
     
     DOM.navButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.screen === screenId));
-    AppState.activeScreen = screenId;
+    
+    if (screenId !== 'settings-screen') {
+        AppState.activeScreen = screenId;
+    }
     saveStateToLocalStorage();
+    
+    if (screenId === 'menu-screen') {
+        scrollToCurrentDay();
+    }
 }
+
+function scrollToCurrentDay() {
+    setTimeout(() => {
+        const days = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+        const todayName = days[new Date().getDay()];
+        const dayCards = DOM.menuContent.querySelectorAll('.day-card');
+        
+        dayCards.forEach(card => card.classList.remove('is-today'));
+        
+        const todayCard = Array.from(dayCards).find(card => 
+            card.querySelector('h3').textContent.toLowerCase().includes(todayName)
+        );
+
+        if (todayCard) {
+            todayCard.classList.add('is-today');
+            todayCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 200);
+}
+
 
 // --- RENDERING ---
 function renderApp() {
-    if (!AppState.menu || AppState.menu.length === 0) {
-        navigateTo('settings-screen');
-    } else {
-        renderMenu();
-        renderRecipesList();
-        renderShoppingList();
-        renderPrintView();
-        navigateTo(AppState.activeScreen);
-    }
+    renderMenu();
+    renderRecipesList();
+    renderShoppingList();
+    renderPrintView();
+    navigateTo(AppState.activeScreen);
 }
 
 function populateSettingsForm() {
@@ -180,7 +214,7 @@ function populateSettingsForm() {
 
 function renderMenu() {
     if (!AppState.menu || AppState.menu.length === 0) {
-        DOM.menuContent.innerHTML = `<p>Меню еще не сгенерировано. Перейдите в настройки, чтобы начать.</p>`;
+        DOM.menuContent.innerHTML = `<p style="text-align: center; padding: 2rem;">Меню еще не сгенерировано.<br>Перейдите в настройки, чтобы начать.</p>`;
         return;
     }
     const mealTypes = { breakfast: 'Завтрак', snack1: 'Перекус', lunch: 'Обед', snack2: 'Полдник', dinner: 'Ужин' };
@@ -207,7 +241,7 @@ function renderMenu() {
                             <span class="meal-type-label">${mealLabel}</span>
                             ${mealHtml}
                         </div>
-                        <div class="recipe-quick-view" data-recipe-container="${meal.recipeId}"></div>
+                        <div class="recipe-quick-view" data-recipe-container="${meal.recipeId || ''}"></div>
                     </li>`;
                 }).join('')}
             </ul>
@@ -333,11 +367,24 @@ function renderPrintView() {
 
 // --- EVENT LISTENERS ---
 function registerEventListeners() {
+    DOM.globalSettingsBtn.addEventListener('click', () => navigateTo('settings-screen'));
     DOM.navButtons.forEach(button => button.addEventListener('click', () => navigateTo(button.dataset.screen)));
-    DOM.settingsForm.addEventListener('submit', e => { e.preventDefault(); updateSettingsFromForm(); handleGeneration(); });
+    
+    DOM.settingsForm.addEventListener('submit', e => { 
+        e.preventDefault();
+        if (AppState.menu && AppState.menu.length > 0) {
+            if (confirm("Вы уверены? Существующее меню будет заменено новым.")) {
+                updateSettingsFromForm(); 
+                handleGeneration();
+            }
+        } else {
+            updateSettingsFromForm(); 
+            handleGeneration();
+        }
+    });
+
     DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
     DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
-    DOM.regenerateMenuBtn.addEventListener('click', () => { if(confirm("Вы уверены? Текущее меню будет удалено.")) { updateSettingsFromForm(); handleGeneration(); } });
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
     DOM.menuContent.addEventListener('click', handleMenuClick);
     DOM.backToRecipesBtn.addEventListener('click', () => navigateTo('recipes-screen'));
@@ -351,6 +398,7 @@ function registerEventListeners() {
     DOM.scanQrBtn.addEventListener('click', startQrScanner);
     DOM.closeQrModal.addEventListener('click', () => DOM.qrCodeModal.classList.remove('visible'));
     DOM.closeScannerModal.addEventListener('click', stopQrScanner);
+    DOM.printBtn.addEventListener('click', () => navigateTo('print-screen'));
 
     DOM.recipeStepsContainer.addEventListener('click', handleRecipeStepClick);
     DOM.recipeStepsContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -547,8 +595,8 @@ async function handleGeneration() {
         AppState.cookedMeals = {};
         AppState.timers = {};
         saveStateToLocalStorage();
+        AppState.activeScreen = 'menu-screen';
         renderApp();
-        navigateTo('menu-screen');
     } catch (error) { 
         console.error("Error generating menu:", error); 
         showToast(error.message || "Произошла ошибка при генерации меню.", true);
@@ -563,8 +611,8 @@ function loadDefaultData() {
     AppState.shoppingList = AppState.shoppingList.map(item => ({...item, completed: false}));
     AppState.cookedMeals = AppState.cookedMeals || {};
     saveStateToLocalStorage();
+    AppState.activeScreen = 'menu-screen';
     renderApp();
-    navigateTo('menu-screen');
 }
 
 function createPrompt(settings) {
@@ -583,6 +631,10 @@ function showToast(message, isError = false) {
 
 // --- SYNC & DATA MANAGEMENT ---
 async function sharePlanViaQR() {
+    if (!AppState.menu || AppState.menu.length === 0) {
+        showToast('Сначала сгенерируйте меню, чтобы поделиться им.');
+        return;
+    }
     try {
         const jsonString = JSON.stringify(AppState);
         const compressed = pako.deflate(jsonString, { to: 'string' });
@@ -639,6 +691,7 @@ function tick() {
                     saveStateToLocalStorage();
                     populateSettingsForm();
                     initializeAI();
+                    AppState.activeScreen = 'menu-screen';
                     renderApp();
                     showToast("План успешно синхронизирован!");
                 } else { throw new Error("Invalid data"); }
@@ -689,6 +742,7 @@ function importState(event) {
                 saveStateToLocalStorage();
                 populateSettingsForm();
                 initializeAI();
+                AppState.activeScreen = 'menu-screen';
                 renderApp();
                 showToast("Данные успешно импортированы!");
             } else { throw new Error("Invalid file format"); }
