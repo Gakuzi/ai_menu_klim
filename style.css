@@ -107,7 +107,7 @@ body::before {
 }
 
 /* --- Global Settings Button --- */
-.global-settings-btn {
+#global-settings-btn {
     position: fixed;
     top: calc(env(safe-area-inset-top) + 1.25rem);
     right: 1.5rem;
@@ -127,7 +127,7 @@ body::before {
     color: var(--text-color);
     transition: transform 0.2s, box-shadow 0.4s ease-in-out;
 }
-.global-settings-btn:active {
+#global-settings-btn:active {
     transform: scale(0.9);
 }
 
@@ -143,12 +143,12 @@ body::before {
     }
 }
 
-.global-settings-btn.ai-ready {
+#global-settings-btn.ai-ready {
     box-shadow: 0 0 8px 2px rgba(94, 122, 110, 0.5); /* var(--success-accent) */
     animation: pulse-green 2s infinite;
 }
 
-.global-settings-btn.ai-unavailable {
+#global-settings-btn.ai-unavailable {
     box-shadow: 0 0 8px 3px rgba(224, 122, 95, 0.6); /* var(--warning-accent) */
 }
 

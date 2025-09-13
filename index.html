@@ -177,7 +177,12 @@
     </main>
 
     <!-- Модальные окна -->
-    <div id="loader-modal" class="modal-overlay"><div class="modal-content"><div class="spinner"></div><p>Создаём немного магии...<br>Ваше меню почти готово!</p></div></div>
+    <div id="loader-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="spinner"></div>
+            <p id="loader-status">Создаём немного магии...<br>Ваше меню почти готово!</p>
+        </div>
+    </div>
     <div id="pwa-modal" class="modal-overlay"><div class="modal-content"><h3>Как дома</h3><p>Чтобы приложение всегда было под рукой, добавьте его на главный экран:</p><ol><li>Нажмите иконку <strong>"Поделиться"</strong> в Safari.</li><li>Пролистайте и выберите <strong>"На экран «Домой»"</strong>.</li></ol><button id="close-pwa-modal" class="btn-secondary">Понятно</button></div></div>
     <div id="qr-code-modal" class="modal-overlay"><div class="modal-content"><h3>Поделиться планом</h3><p>Попросите члена семьи отсканировать этот QR-код в приложении, чтобы синхронизировать данные.</p><canvas id="qr-code-canvas"></canvas><button id="close-qr-modal" class="btn-secondary">Закрыть</button></div></div>
     <div id="qr-scanner-modal" class="modal-overlay"><div class="modal-content"><div id="scanner-container"><h3>Сканирование QR-кода</h3><p>Наведите камеру на QR-код другого устройства.</p><video id="qr-video" playsinline></video><div class="scanner-box"></div></div><button id="close-scanner-modal" class="btn-secondary">Отмена</button></div></div>

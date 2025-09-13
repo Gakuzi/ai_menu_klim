@@ -36,6 +36,7 @@ const DOM = {
     printContent: document.getElementById('print-content'),
     printBtn: document.getElementById('print-btn'),
     loaderModal: document.getElementById('loader-modal'),
+    loaderStatus: document.getElementById('loader-status'),
     toast: document.getElementById('toast-notification'),
     pwaModal: document.getElementById('pwa-modal'),
     closePwaModal: document.getElementById('close-pwa-modal'),
@@ -637,18 +638,27 @@ function handleTouchEnd() {
 }
 
 // --- API & GENERATION LOGIC ---
-const responseSchema = {type:Type.OBJECT,properties:{menu:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{dayName:{type:Type.STRING},breakfast:{type:Type.STRING},snack1:{type:Type.STRING},lunch:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},snack2:{type:Type.STRING},dinner:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},},},},recipes:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},isProteinBased:{type:Type.BOOLEAN},ingredients:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{name:{type:Type.STRING},quantity:{type:Type.STRING},},},},steps:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{title:{type:Type.STRING},description:{type:Type.STRING},timer:{type:Type.INTEGER,nullable:true},},},},},},},shoppingList:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},quantity:{type:Type.STRING},category:{type:Type.STRING},price:{type:Type.NUMBER},},},},},};
+const responseSchema = {type:Type.OBJECT,properties:{menu:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{dayName:{type:Type.STRING},breakfast:{type:Type.STRING},snack1:{type:Type.STRING},lunch:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},snack2:{type:Type.STRING},dinner:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},},},},recipes:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},isProteinBased:{type:Type.BOOLEAN},ingredients:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{name:{type:Type.STRING},quantity:{type:Type.STRING},},},},steps:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{title:{type:Type.STRING},description:{type:Type.STRING},timer:{type:Type.INTEGER},},},},},},},shoppingList:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},quantity:{type:Type.STRING},category:{type:Type.STRING},price:{type:Type.NUMBER},},},},},};
 
 async function handleGeneration() {
     if (!ai) { showToast("Генерация недоступна. Проверьте API ключ в настройках.", true); return; }
+    
+    DOM.loaderStatus.innerHTML = "Подготовка запроса...";
     DOM.loaderModal.classList.add('visible');
+    
     try {
         const prompt = createPrompt(AppState.settings);
+        
+        DOM.loaderStatus.innerHTML = "Отправляю запрос в AI...<br>Это может занять до 30 секунд.";
+
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: { responseMimeType: "application/json", responseSchema: responseSchema },
         });
+        
+        DOM.loaderStatus.innerHTML = "Обработка ответа...";
+
         const data = JSON.parse(response.text);
         const recipesObject = data.recipes.reduce((acc, recipe) => { acc[recipe.id] = recipe; return acc; }, {});
         AppState.menu = data.menu;
