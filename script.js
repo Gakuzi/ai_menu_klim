@@ -55,6 +55,7 @@ const DOM = {
     apiKeyInput: document.getElementById('api-key-input'),
     verifyApiKeyBtn: document.getElementById('verify-api-key-btn'),
     aiConnectionStatus: document.getElementById('ai-connection-status'),
+    manualApiKeyContainer: document.getElementById('manual-api-key-container'),
 };
 
 const defaultPlan = {
@@ -84,7 +85,7 @@ async function init() {
         }
     }
 
-    await verifyAndInitializeAI(); // Non-blocking check on startup
+    await initializeAI();
     renderApp();
     registerEventListeners();
     checkPwaPrompt();
@@ -97,52 +98,80 @@ function checkPwaPrompt() {
     }
 }
 
-async function verifyAndInitializeAI(apiKeyOverride = null) {
-    let apiKey = apiKeyOverride || AppState.apiKey;
-     if (!apiKey) {
-        // Fallback for deployments with environment variables
-        try {
-            if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-                apiKey = process.env.API_KEY;
-            }
-        } catch (e) { /* ignore ReferenceError in browser */ }
-    }
+async function initializeAI() {
+    let apiKey = null;
+    let isFromEnv = false;
 
-    if (!apiKey) {
-        updateAiStatus('unavailable', 'Ключ не найден. Введите его для активации AI.');
-        return;
-    }
-
+    // Priority 1: Check for environment variable (GitHub Secret)
     try {
-        ai = new GoogleGenAI({ apiKey });
-        // Perform a lightweight test call to validate the key
-        await ai.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            apiKey = process.env.API_KEY;
+            isFromEnv = true;
+        }
+    } catch (e) { /* ignore ReferenceError in browser */ }
+
+    // Priority 2: Fallback to localStorage
+    if (!apiKey) {
+        apiKey = AppState.apiKey;
+    }
+    
+    if (apiKey) {
+        const success = await verifyApiKey(apiKey);
+        if (success && isFromEnv) {
+            DOM.manualApiKeyContainer.classList.add('hidden');
+        }
+    } else {
+        updateAiStatus('unavailable', 'Ключ не найден. Введите его для активации AI.');
+    }
+}
+
+
+async function verifyApiKey(apiKey) {
+    if (!apiKey) {
+        updateAiStatus('unavailable', 'Ключ не может быть пустым.');
+        return false;
+    }
+
+    updateAiStatus('loading', 'Проверяем ключ...');
+    
+    try {
+        const tempAi = new GoogleGenAI({ apiKey });
+        await tempAi.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
         
+        ai = tempAi;
         AppState.apiKey = apiKey;
         saveStateToLocalStorage();
         updateAiStatus('ready', 'AI готов к работе! Ключ сохранен.');
+        return true;
     } catch (error) {
         console.error("AI Verification Error:", error);
         ai = null;
         updateAiStatus('unavailable', 'Ошибка: Ключ недействителен или проблема с сетью.');
+        return false;
     }
 }
 
 function updateAiStatus(status, message) {
     DOM.globalSettingsBtn.classList.remove('ai-ready', 'ai-unavailable');
-    DOM.aiConnectionStatus.classList.remove('success', 'error');
+    DOM.aiConnectionStatus.classList.remove('success', 'error', 'loading');
 
-    if (status === 'ready') {
-        DOM.globalSettingsBtn.classList.add('ai-ready');
-        DOM.generateAiBtn.disabled = false;
-        DOM.aiConnectionStatus.textContent = message;
-        DOM.aiConnectionStatus.classList.add('success');
-    } else {
-        DOM.globalSettingsBtn.classList.add('ai-unavailable');
-        DOM.generateAiBtn.disabled = true;
-        DOM.aiConnectionStatus.textContent = message;
-        DOM.aiConnectionStatus.classList.add('error');
+    switch(status) {
+        case 'ready':
+            DOM.globalSettingsBtn.classList.add('ai-ready');
+            DOM.generateAiBtn.disabled = false;
+            DOM.aiConnectionStatus.classList.add('success');
+            break;
+        case 'unavailable':
+            DOM.globalSettingsBtn.classList.add('ai-unavailable');
+            DOM.generateAiBtn.disabled = true;
+            DOM.aiConnectionStatus.classList.add('error');
+            break;
+        case 'loading':
+            DOM.generateAiBtn.disabled = true;
+            DOM.aiConnectionStatus.classList.add('loading');
+            break;
     }
+    DOM.aiConnectionStatus.textContent = message;
 }
 
 
@@ -466,13 +495,17 @@ function registerEventListeners() {
     
     DOM.generateAiBtn.addEventListener('click', generationAction);
     DOM.loadDemoBtn.addEventListener('click', loadDefaultData);
-    DOM.verifyApiKeyBtn.addEventListener('click', () => {
+    
+    DOM.verifyApiKeyBtn.addEventListener('click', async () => {
         const key = DOM.apiKeyInput.value.trim();
-        if (key) {
-            verifyAndInitializeAI(key);
-        } else {
-            showToast("Пожалуйста, введите API ключ.", true);
-        }
+        const originalButtonText = DOM.verifyApiKeyBtn.textContent;
+        DOM.verifyApiKeyBtn.disabled = true;
+        DOM.verifyApiKeyBtn.textContent = 'Проверка...';
+        
+        await verifyApiKey(key);
+        
+        DOM.verifyApiKeyBtn.disabled = false;
+        DOM.verifyApiKeyBtn.textContent = originalButtonText;
     });
 
     DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
@@ -710,7 +743,7 @@ function tick() {
                     Object.assign(AppState, importedState);
                     saveStateToLocalStorage();
                     populateSettingsForm();
-                    verifyAndInitializeAI();
+                    initializeAI();
                     AppState.activeScreen = 'menu-screen';
                     renderApp();
                     showToast("План успешно синхронизирован!");
@@ -758,7 +791,7 @@ function importState(event) {
                 Object.assign(AppState, importedState);
                 saveStateToLocalStorage();
                 populateSettingsForm();
-                verifyAndInitializeAI();
+                initializeAI();
                 AppState.activeScreen = 'menu-screen';
                 renderApp();
                 showToast("Данные успешно импортированы!");

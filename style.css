@@ -651,10 +651,15 @@ select {
 .ai-connection-section .form-group {
     margin-top: 1rem;
 }
+.manual-api-key-container.hidden {
+    display: none;
+}
+
 #ai-connection-status {
     font-size: 0.9rem;
     margin-top: 0.5rem;
     color: var(--subtitle-color);
+    transition: color 0.3s;
 }
 #ai-connection-status.success {
     color: var(--success-accent);
@@ -664,6 +669,15 @@ select {
     color: var(--warning-accent);
     font-weight: bold;
 }
+#ai-connection-status.loading {
+    color: var(--subtitle-color);
+}
+
+#verify-api-key-btn:disabled {
+    cursor: wait;
+    background-color: var(--subtitle-color);
+}
+
 
 .data-buttons {
     display: grid;
