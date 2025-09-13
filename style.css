@@ -1,11 +1,11 @@
 :root {
     --bg-color: #F9F7F4;
     --text-color: #3D352E;
-    --primary-accent: #8B5E3C; /* Warm coffee */
-    --secondary-accent: #D4A373; /* Light beige */
-    --success-accent: #5E7A6E; /* Minty green */
-    --warning-accent: #E07A5F; /* Warm orange */
-    --auto-accent: #5F7DE0; /* Calm blue for auto mode */
+    --primary-accent: #8B5E3C; 
+    --secondary-accent: #D4A373;
+    --success-accent: #5E7A6E;
+    --warning-accent: #E07A5F;
+    --auto-accent: #5F7DE0;
     --card-bg: #FFFFFF;
     --border-color: #EFEBE4;
     --subtitle-color: #A39B8F;
@@ -14,7 +14,7 @@
     --font-family-heading: 'Nunito', system-ui, -apple-system, sans-serif;
 
     --border-radius: 20px;
-    --shadow: 0 4px 16px rgba(139, 94, 60, 0.05);
+    --shadow: 0 4px 16px rgba(0,0,0,0.03);
     --nav-height: 85px;
 }
 
@@ -87,14 +87,14 @@ body::before {
 
 .screen-header h1 {
     font-family: var(--font-family-heading);
-    font-size: 24pt;
-    font-weight: 700;
+    font-size: 22pt;
+    font-weight: 600;
     color: var(--text-color);
     line-height: 1.2;
 }
 .screen-header .subtitle {
     font-size: 15pt;
-    color: var(--subtitle-color);
+    color: #7D7D7D;
 }
 
 .screen-content {
@@ -175,7 +175,7 @@ body::before {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    transition: color 0.3s, transform 0.2s;
+    transition: color 0.3s, transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     flex-grow: 1;
 }
 .nav-btn:active {
@@ -306,7 +306,7 @@ select {
     flex-grow: 1; /* For multi-button footers */
 }
 .btn-primary:active, .btn-secondary:active {
-    transform: scale(0.97);
+    transform: scale(0.95);
 }
 .btn-primary {
     background-color: var(--primary-accent);
@@ -480,7 +480,7 @@ select {
     transform: rotate(45deg);
 }
 .recipe-card:active {
-    transform: translateY(2px);
+    transform: translateY(2px) scale(0.98);
     box-shadow: 0 2px 8px rgba(139, 94, 60, 0.05);
 }
 .recipe-card h3 {
@@ -561,9 +561,9 @@ select {
 .timer-display {
     font-family: var(--font-family-heading);
     font-size: 20pt; font-weight: 700; color: var(--primary-accent);
-    animation: pulse 5s infinite ease-in-out;
+    animation: timer-pulse 5s infinite ease-in-out;
 }
-@keyframes pulse { 50% { opacity: 0.7; } }
+@keyframes timer-pulse { 50% { opacity: 0.7; } }
 
 .timer-controls button {
     background-color: var(--secondary-accent);
@@ -630,7 +630,9 @@ select {
 .shopping-item-toggle.completed {
     background-color: var(--success-accent); border-color: var(--success-accent);
     transform: scale(1.1);
+    animation: pulse-check 0.5s;
 }
+@keyframes pulse-check { 0% { transform: scale(1.1); } 50% { transform: scale(1.3); } 100% { transform: scale(1.1); } }
 .shopping-item-toggle.completed::after {
     content: '✓'; color: white; font-weight: bold; font-size: 16px;
 }
@@ -639,6 +641,37 @@ select {
 }
 .shopping-item.completed .shopping-item-info {
     text-decoration: line-through; color: var(--subtitle-color);
+}
+
+.pwa-prompt {
+    background-color: var(--card-bg);
+    padding: 1rem 1.5rem;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 1.5rem;
+    position: relative;
+    border: 1px solid var(--border-color);
+}
+.pwa-prompt.hidden {
+    display: none;
+}
+.pwa-prompt p {
+    margin: 0;
+    padding-right: 2rem;
+    line-height: 1.4;
+    font-size: 14px;
+}
+.pwa-prompt strong {
+    font-family: var(--font-family-heading);
+}
+.pwa-prompt .dismiss-btn {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 28px; height: 28px;
+    background: none; border: none;
+    font-size: 20px;
+    color: var(--subtitle-color);
+    cursor: pointer;
 }
 
 /* Data Management & AI Connection */
@@ -718,12 +751,23 @@ select {
     grid-column: span 2;
 }
 
-/* Diagnostics Section */
+/* Diagnostics & Autofix Section */
 .diagnostics-section {
     margin-top: 1.5rem;
 }
+.diagnostics-section h3 {
+    font-family: var(--font-family-heading);
+    font-size: 16pt;
+    margin-bottom: 1rem;
+}
+.diagnostics-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
 
-.diagnostics-results-container {
+.diagnostics-results-container, .autofix-log-container {
     margin-top: 1rem;
     background-color: rgba(255, 255, 255, 0.5);
     border: 1px solid var(--border-color);
@@ -734,27 +778,31 @@ select {
     overflow: hidden;
     transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
 }
-.diagnostics-results-container.visible {
+.diagnostics-results-container.visible, .autofix-log-container.visible {
     max-height: 500px;
     padding: 1rem;
+    overflow-y: auto;
 }
-.diagnostic-step {
+
+.diagnostic-step, .autofix-log-entry {
     padding: 0.75rem 0;
     border-bottom: 1px solid var(--border-color);
 }
-.diagnostic-step:last-child {
+.diagnostic-step:last-child, .autofix-log-entry:last-child {
     border-bottom: none;
 }
-.diagnostic-step .step-title {
+.diagnostic-step .step-title, .autofix-log-entry .log-title {
     font-weight: bold;
     margin-bottom: 0.25rem;
 }
-.diagnostic-step .step-status {
+.diagnostic-step .step-status, .autofix-log-entry .log-status {
     font-weight: bold;
 }
-.diagnostic-step .step-status.success { color: var(--success-accent); }
-.diagnostic-step .step-status.error { color: var(--warning-accent); }
-.diagnostic-step .step-details {
+.diagnostic-step .step-status.success, .autofix-log-entry .log-status.success { color: var(--success-accent); }
+.diagnostic-step .step-status.error, .autofix-log-entry .log-status.error { color: var(--warning-accent); }
+.autofix-log-entry .log-status.info { color: var(--auto-accent); }
+
+.diagnostic-step .step-details, .autofix-log-entry .log-details {
     margin-top: 0.5rem;
     background-color: var(--bg-color);
     padding: 0.5rem;
@@ -763,11 +811,15 @@ select {
     font-size: 0.8rem;
     word-break: break-all;
 }
-.diagnostic-step .step-fix {
+.diagnostic-step .step-fix, .autofix-log-entry .log-fix {
     margin-top: 0.5rem;
     padding: 0.5rem;
     border-radius: 8px;
     background-color: rgba(212, 163, 115, 0.1);
+}
+.diagnostic-step .step-fix a, .autofix-log-entry .log-fix a {
+    color: var(--primary-accent);
+    font-weight: bold;
 }
 .diagnostic-step .ai-response {
     margin-top: 0.75rem;
@@ -828,13 +880,15 @@ input:checked + .slider:before {
 
 /* --- Печать --- */
 .print-page {
-    background: white; padding: 2rem; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    background: white; 
+    padding: 2rem; 
+    color: #333;
 }
-.print-page h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #333; }
-.print-page h2 { margin-top: 1.5rem; border-bottom: 2px solid #8B5E3C; padding-bottom: 0.5rem; font-size: 1.2rem; color: #8B5E3C; }
+.print-page h1 { font-size: 22pt; margin-bottom: 1rem; color: #333; font-family: var(--font-family-heading); }
+.print-page h2 { margin-top: 1.5rem; border-bottom: 2px solid var(--primary-accent); padding-bottom: 0.5rem; font-size: 16pt; color: var(--primary-accent); font-family: var(--font-family-heading); }
 .print-page ul { list-style: none; padding-left: 0; }
-.print-page li { padding: 0.25rem 0; font-size: 1rem; }
-.print-page footer { margin-top: 2rem; text-align: center; font-style: italic; color: #777; font-size: 0.9rem; border-top: 1px solid #eee; padding-top: 1rem; }
+.print-page li { padding: 0.25rem 0; font-size: 12pt; }
+.print-page footer { margin-top: 2rem; text-align: center; font-style: italic; color: #777; font-size: 10pt; border-top: 1px solid #eee; padding-top: 1rem; }
 
 /* --- Модальные окна & Toast --- */
 .modal-overlay {
@@ -943,7 +997,7 @@ input:checked + .slider:before {
 /* --- Стили для печати --- */
 @media print {
     body * { visibility: hidden; }
-    #print-screen, .print-page, .print-page * { visibility: visible; }
+    .print-page, .print-page * { visibility: visible; }
     #print-screen { position: absolute; left: 0; top: 0; width: 100%; }
     .no-print { display: none !important; }
 }

@@ -12,9 +12,10 @@
     <link rel="stylesheet" href="style.css">
     
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Меню">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23F9F7F4'/%3E%3Cpath d='M90 125C120.376 125 145 100.376 145 70C145 39.624 120.376 15 90 15C59.624 15 35 39.624 35 70C35 100.376 59.624 125 90 125Z' stroke='%23D4A373' stroke-width='8'/%3E%3Cpath d='M90 125C120.376 125 145 100.376 145 70C145 39.624 120.376 15 90 15C59.624 15 35 39.624 35 70C35 100.376 59.624 125 90 125Z' stroke='%238B5E3C' stroke-width='8' stroke-opacity='0.2'/%3E%3Cpath d='M60 145L70 45' stroke='%238B5E3C' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M120 145L110 45' stroke='%238B5E3C' stroke-width='8' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23F9F7F4'/%3E%3Cpath d='M90,70 A20,20 0,0,1 90,110 A20,20 0,0,1 90,70 M90,65 C75,65 75,30 90,30 C105,30 105,65 90,65 Z' fill='%238B5E3C'/%3E%3Cpath d='M82 30 C 82 25, 85 20, 90 20 C 95 20, 98 25, 98 30' stroke='%23D4A373' stroke-width='4' stroke-linecap='round' fill='none' opacity='0.7'%3E%3Canimate attributeName='d' values='M82 30 C 82 25, 85 20, 90 20 C 95 20, 98 25, 98 30; M82 25 C 82 20, 85 15, 90 15 C 95 15, 98 20, 98 25; M82 30 C 82 25, 85 20, 90 20 C 95 20, 98 25, 98 30' dur='2s' repeatCount='indefinite'/%3E%3C/path%3E%3Cpath d='M75 35 C 75 30, 78 25, 83 25 C 88 25, 91 30, 91 35' stroke='%23D4A373' stroke-width='3' stroke-linecap='round' fill='none' opacity='0.5'%3E%3Canimate attributeName='d' values='M75 35 C 75 30, 78 25, 83 25 C 88 25, 91 30, 91 35; M75 30 C 75 25, 78 20, 83 20 C 88 20, 91 25, 91 30; M75 35 C 75 30, 78 25, 83 25 C 88 25, 91 30, 91 35' dur='3s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E">
     <meta name="theme-color" content="#F9F7F4">
 </head>
 <body>
@@ -113,8 +114,13 @@
                         <p id="ai-connection-status">Инициализация...</p>
                         
                         <div class="diagnostics-section">
-                            <button id="run-diagnostics-btn" class="btn-secondary">Запустить диагностику</button>
+                            <h3>Диагностика и Исправление</h3>
+                            <div class="diagnostics-buttons">
+                               <button id="run-diagnostics-btn" class="btn-secondary">Запустить диагностику</button>
+                               <button id="run-autofix-btn" class="btn-secondary">Запустить авто-исправление</button>
+                            </div>
                             <div id="diagnostics-results" class="diagnostics-results-container"></div>
+                            <div id="autofix-log" class="autofix-log-container"></div>
                         </div>
                     </div>
                 </div>
@@ -167,7 +173,13 @@
                 <p class="subtitle">Всё, что нужно для ваших блюд</p>
             </header>
             <div id="shopping-list-summary" class="shopping-summary"></div>
-            <div id="shopping-list-content" class="screen-content"></div>
+            <div id="shopping-list-content" class="screen-content">
+                <div id="pwa-install-prompt" class="pwa-prompt">
+                    <p><strong>Это приложение может больше!</strong><br>Добавьте его на главный экран для быстрого доступа и работы офлайн.</p>
+                    <button id="dismiss-pwa-prompt" class="dismiss-btn">×</button>
+                </div>
+                <!-- Список будет здесь -->
+            </div>
              <div class="footer-action">
                 <button id="export-reminders-button" class="btn-secondary">Добавить в Напоминания</button>
             </div>
@@ -178,8 +190,11 @@
             <header class="screen-header no-print">
                 <h1>Версия для печати</h1>
                 <button onclick="window.print()" class="btn-primary no-print">Распечатать</button>
+                <p class="subtitle no-print">Оформлено для формата А4</p>
             </header>
-            <div id="print-content" class="print-page"></div>
+            <div id="print-content" class="print-page">
+                 <!-- Контент для печати будет здесь -->
+            </div>
         </div>
 
         <!-- Навигация -->

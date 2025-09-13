@@ -72,6 +72,10 @@ const DOM = {
     resetPromptsBtn: document.getElementById('reset-prompts-btn'),
     promptMainInput: document.getElementById('prompt-main-input'),
     promptRulesInput: document.getElementById('prompt-rules-input'),
+    runAutofixBtn: document.getElementById('run-autofix-btn'),
+    autofixLog: document.getElementById('autofix-log'),
+    pwaInstallPrompt: document.getElementById('pwa-install-prompt'),
+    dismissPwaPrompt: document.getElementById('dismiss-pwa-prompt'),
 };
 
 const defaultPrompts = {
@@ -82,11 +86,11 @@ const defaultPrompts = {
 - Restrictions: {settings.restrictions}
 - Goal: {settings.goal}
 - Allergies: {settings.allergies}.`,
-    rules: `The JSON object must strictly follow this structure: { "menu": [], "recipes": [], "shoppingList": [] }.
-1. Menu: Array for {settings.days} days. Each day object needs: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals to reduce cooking time.
-2. Recipes: Array of recipe objects. Each needs: a unique camelCase "id", "name", "isProteinBased" (boolean for main dishes), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes (optional) }).
-3. Shopping List: Consolidate ALL ingredients from ALL recipes. Each item needs: a unique kebab-case "id", "name", "quantity", "category" (from a predefined list), "price" (estimated price in RUB, proportional to people/days, using this reference: 7 days for 3 people is ~6872 RUB).
-All text must be in Russian. Generate simple, common recipes suitable for a Russian family.`
+    rules: `The JSON object must strictly follow this structure: { "menu": [], "recipes": {}, "shoppingList": [] }.
+1. Menu: Create a diverse plan for {settings.days} days with no repeating main dishes, except for planned leftovers. Each day object must have: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Intelligently schedule 1-2 leftover meals for lunches to reduce cooking time.
+2. Recipes: A dictionary of recipe objects where the key is a unique camelCase "id". Each recipe must have: "name", "isProteinBased" (boolean for main lunch/dinner dishes), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes }). Only add a "timer" where active waiting is required (e.g., simmering, baking, boiling). Ingredient quantities must be accurately calculated for {settings.people} people.
+3. Shopping List: Consolidate ALL ingredients from ALL recipes. Each item must have: a unique kebab-case "id", "name", "quantity", "category" (from a standard list like "Мясо и птица", "Овощи и зелень", "Молочные и яйца", etc.), "price" (estimated price in RUB). Calculate the total price proportionally based on these examples: 7 days for 3 people is approx. 6872 RUB; 5 days for 2 people is approx. 3920 RUB.
+All text must be in Russian. Generate simple, common recipes suitable for a Russian family, considering the specified restrictions.`
 };
 
 
@@ -122,7 +126,16 @@ async function init() {
     await initializeAI();
     renderApp();
     registerEventListeners();
-    checkPwaPrompt();
+    checkPwaInstallPrompt();
+}
+
+function checkPwaInstallPrompt() {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    if (isStandalone || localStorage.getItem('pwaInstallPromptDismissed')) {
+        DOM.pwaInstallPrompt.classList.add('hidden');
+    } else {
+         DOM.pwaInstallPrompt.classList.remove('hidden');
+    }
 }
 
 function checkPwaPrompt() {
@@ -517,12 +530,21 @@ function renderShoppingList() {
     }
     const categories = AppState.shoppingList.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
     const categoryOrder = ["Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"];
-    DOM.shoppingListContent.innerHTML = categoryOrder.map(category => categories[category] ? `
+    const itemsHtml = categoryOrder.map(category => categories[category] ? `
         <div class="shopping-category"><h3>${category}</h3>${categories[category].map(item => `
             <div class="shopping-item ${item.completed ? 'completed' : ''}" data-item-id="${item.id}">
                 <div class="shopping-item-toggle ${item.completed ? 'completed' : ''}"></div>
                 <div class="shopping-item-info"><span>${item.name}</span><div class="item-quantity">${item.quantity}</div></div>
             </div>`).join('')}</div>` : '').join('');
+    
+    // Prepend the PWA prompt to the items list
+    DOM.shoppingListContent.innerHTML = DOM.pwaInstallPrompt.outerHTML + itemsHtml;
+    // Re-bind the dismiss button event listener as innerHTML removes it
+    document.getElementById('dismiss-pwa-prompt').addEventListener('click', () => {
+        document.getElementById('pwa-install-prompt').classList.add('hidden');
+        localStorage.setItem('pwaInstallPromptDismissed', 'true');
+    });
+
     updateShoppingSummary();
 }
 
@@ -541,7 +563,7 @@ function updateShoppingSummary() {
 function renderPrintView() {
     if (AppState.shoppingList.length === 0) { DOM.printContent.innerHTML = `<p>Список покупок пуст.</p>`; return; }
     const categories = AppState.shoppingList.reduce((acc, item) => { (acc[item.category] = acc[item.category] || []).push(item); return acc; }, {});
-    DOM.printContent.innerHTML = `<h1>Список покупок</h1>${Object.keys(categories).map(cat => `<h2>${cat}</h2><ul>${categories[cat].map(item => `<li>${item.name} - ${item.quantity}</li>`).join('')}</ul>`).join('')}<footer>Семейное меню на неделю • Создано с любовью</footer>`;
+    DOM.printContent.innerHTML = `<h1>Список покупок</h1>${Object.keys(categories).map(cat => `<h2>${cat}</h2><ul>${categories[cat].map(item => `<li>${item.name} - ${item.quantity}</li>`).join('')}</ul>`).join('')}<footer>Семейное меню • Создано с любовью</footer>`;
 }
 
 // --- EVENT LISTENERS ---
@@ -590,6 +612,7 @@ function registerEventListeners() {
     });
 
     DOM.runDiagnosticsBtn.addEventListener('click', runAiDiagnostics);
+    DOM.runAutofixBtn.addEventListener('click', runAutofixRoutine);
     DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
     DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
@@ -613,7 +636,7 @@ function registerEventListeners() {
     DOM.editPromptsBtn.addEventListener('click', openPromptsEditor);
     DOM.closePromptsModal.addEventListener('click', () => DOM.promptsModal.classList.remove('visible'));
     DOM.savePromptsBtn.addEventListener('click', savePrompts);
-    DOM.resetPromptsBtn.addEventListener('click', resetPrompts);
+    DOM.resetPromptsBtn.addEventListener('click', () => resetPrompts(false));
     
     DOM.shoppingListContent.addEventListener('click', e => {
         const itemElement = e.target.closest('.shopping-item');
@@ -621,6 +644,11 @@ function registerEventListeners() {
             const item = AppState.shoppingList.find(i => i.id === itemElement.dataset.itemId);
             if(item) { item.completed = !item.completed; saveStateToLocalStorage(); renderShoppingList(); }
         }
+    });
+
+    DOM.dismissPwaPrompt.addEventListener('click', () => {
+        DOM.pwaInstallPrompt.classList.add('hidden');
+        localStorage.setItem('pwaInstallPromptDismissed', 'true');
     });
 }
 
@@ -741,23 +769,8 @@ const responseSchema = {
             }
         },
         recipes: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    id: { type: Type.STRING },
-                    name: { type: Type.STRING },
-                    isProteinBased: { type: Type.BOOLEAN },
-                    ingredients: {
-                        type: Type.ARRAY,
-                        items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, quantity: { type: Type.STRING } } }
-                    },
-                    steps: {
-                        type: Type.ARRAY,
-                        items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING }, timer: { type: Type.INTEGER, nullable: true } } }
-                    }
-                }
-            }
+            type: Type.OBJECT,
+            properties: {}
         },
         shoppingList: {
             type: Type.ARRAY,
@@ -795,9 +808,13 @@ async function handleGeneration() {
         DOM.loaderStatus.innerHTML = "Обработка ответа...";
 
         const data = JSON.parse(response.text);
-        const recipesObject = data.recipes.reduce((acc, recipe) => { acc[recipe.id] = recipe; return acc; }, {});
+
+        if (!data.recipes || typeof data.recipes !== 'object') {
+           throw new Error("Invalid format: 'recipes' should be an object/dictionary.");
+        }
+        
         AppState.menu = data.menu;
-        AppState.recipes = recipesObject;
+        AppState.recipes = data.recipes;
         AppState.shoppingList = data.shoppingList.map(item => ({...item, completed: false}));
         AppState.cookedMeals = {};
         AppState.timers = {};
@@ -861,13 +878,23 @@ function savePrompts() {
     DOM.promptsModal.classList.remove('visible');
 }
 
-function resetPrompts() {
-    if (confirm("Вы уверены, что хотите сбросить промты до значений по умолчанию?")) {
+function resetPrompts(silent = false) {
+    const doReset = () => {
         AppState.prompts = { ...defaultPrompts };
         DOM.promptMainInput.value = AppState.prompts.main;
         DOM.promptRulesInput.value = AppState.prompts.rules;
         saveStateToLocalStorage();
-        showToast("Промты сброшены.");
+        if (!silent) {
+            showToast("Промты сброшены.");
+        }
+    };
+
+    if (silent) {
+        doReset();
+    } else {
+        if (confirm("Вы уверены, что хотите сбросить промты до значений по умолчанию?")) {
+            doReset();
+        }
     }
 }
 
@@ -974,9 +1001,11 @@ function exportState() {
 }
 
 function importState(event) {
-    const file = event.target.files[0]; if (!file) return;
+    const file = event.target.files[0];
+    if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = (e) => {
         try {
             const importedState = JSON.parse(e.target.result);
             if (importedState.settings && importedState.menu && importedState.recipes) {
@@ -984,168 +1013,229 @@ function importState(event) {
                 saveStateToLocalStorage();
                 populateSettingsForm();
                 initializeAI();
-                AppState.activeScreen = 'menu-screen';
+                AppState.activeScreen = 'settings-screen';
                 renderApp();
                 showToast("Данные успешно импортированы!");
-            } else { throw new Error("Invalid file format"); }
-        } catch (error) { showToast("Ошибка: Неверный формат файла."); }
-        finally { DOM.importFileInput.value = ''; }
+            } else {
+                throw new Error("Invalid data structure in file.");
+            }
+        } catch (error) {
+            console.error("Failed to import state:", error);
+            showToast("Ошибка импорта. Файл поврежден или имеет неверный формат.", true);
+        } finally {
+            event.target.value = null; // Reset input
+        }
+    };
+    reader.onerror = () => {
+        showToast("Не удалось прочитать файл.", true);
+        event.target.value = null;
     };
     reader.readAsText(file);
 }
 
-// --- AI Diagnostics ---
-async function runAiDiagnostics() {
-    DOM.diagnosticsResults.innerHTML = '';
-    DOM.diagnosticsResults.classList.add('visible');
-    
-    let apiKey = AppState.aiKeyMode === 'manual' ? AppState.apiKey : (typeof process !== 'undefined' ? process.env.API_KEY : null);
-    
-    // Step 1: Key Check
-    const step1 = createDiagnosticStep('Шаг 1: Проверка наличия ключа');
-    if (apiKey) {
-        updateDiagnosticStep(step1, 'success', `Ключ найден в режиме "${AppState.aiKeyMode}".`);
-    } else {
-        updateDiagnosticStep(step1, 'error', 'Ключ API не найден.', 'Ключ не был предоставлен ни в ручном режиме, ни через переменные окружения (GitHub Secrets).', 'Переключитесь в ручной режим и введите ключ, либо настройте секрет `API_KEY` в вашем репозитории.');
-        return;
-    }
-
-    const testAi = new GoogleGenAI({ apiKey });
-    
-    // Step 2: Basic API Call
-    const step2 = createDiagnosticStep('Шаг 2: Базовый тест API');
-    try {
-        await testAi.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
-        updateDiagnosticStep(step2, 'success', 'Базовый запрос к API успешно выполнен. Ключ действителен.');
-    } catch (error) {
-        const { code, fix } = getErrorMessage(error);
-        updateDiagnosticStep(step2, 'error', 'Базовый запрос к API провалился.', code, fix);
-        return;
-    }
-    
-    // Step 3: Real Generation Test with Response Display
-    const step3 = createDiagnosticStep('Шаг 3: Реальный тест генерации JSON');
-    try {
-        const testSchema = {
-            type: Type.OBJECT,
-            properties: {
-                recipeName: { type: Type.STRING },
-                ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: {type: Type.STRING}, quantity: {type: Type.STRING}}}}
-            }
-        };
-        const response = await testAi.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: 'Generate a simple JSON object for an omelette recipe with a recipeName and a list of ingredients (name, quantity).',
-            config: { responseMimeType: "application/json", responseSchema: testSchema },
-        });
-        updateDiagnosticStep(step3, 'success', 'Тест генерации JSON прошел успешно. AI готов к работе.', null, null, response.text);
-    } catch (error) {
-        const { code, fix } = getErrorMessage(error);
-        updateDiagnosticStep(step3, 'error', 'Запрос на генерацию JSON провалился.', code, fix);
-        return;
-    }
-}
-
-function createDiagnosticStep(title) {
-    const stepDiv = document.createElement('div');
-    stepDiv.className = 'diagnostic-step';
-    stepDiv.innerHTML = `<div class="step-title">${title}</div><div class="step-status">В процессе...</div>`;
-    DOM.diagnosticsResults.appendChild(stepDiv);
-    return stepDiv;
-}
-
-function updateDiagnosticStep(element, status, statusText, details = null, fix = null, aiResponse = null) {
-    const statusEl = element.querySelector('.step-status');
-    statusEl.textContent = status === 'success' ? `УСПЕШНО ✓` : `ПРОВАЛЕН ❌`;
-    statusEl.className = `step-status ${status}`;
-    
-    let detailsHtml = `<p>${statusText}</p>`;
-    if (details) {
-        detailsHtml += `<div class="step-details"><strong>Код ошибки:</strong> ${escapeHtml(details)}</div>`;
-    }
-    if (fix) {
-        detailsHtml += `<div class="step-fix"><strong>💡 Как исправить:</strong> ${fix}</div>`;
-    }
-    if (aiResponse) {
-        detailsHtml += `<div class="step-details"><strong>Ответ от AI:</strong></div><pre class="ai-response">${escapeHtml(aiResponse)}</pre>`;
-    }
-    element.innerHTML = `<div class="step-title">${element.querySelector('.step-title').textContent}</div>${statusEl.outerHTML}${detailsHtml}`;
-}
-
-function getErrorMessage(error) {
-    let code = error.message || 'Неизвестная ошибка';
-    let fix = 'Попробуйте еще раз. Если ошибка повторяется, проверьте консоль разработчика для получения дополнительной информации.';
-
-    if (code.includes('API key not valid')) {
-        code = '[400 Bad Request] API_KEY_NOT_VALID';
-        fix = 'Ваш ключ API недействителен. Убедитесь, что вы скопировали его правильно из Google AI Studio и что для него включен Gemini API.';
-    } else if (code.includes('permission denied')) {
-        code = '[403 Forbidden] PERMISSION_DENIED';
-        fix = 'Доступ запрещен. Убедитесь, что Gemini API включен для вашего проекта в Google Cloud и ключ API имеет необходимые разрешения.';
-    } else if (code.includes('500') || code.includes('503')) {
-        code = '[50x Server Error]';
-        fix = 'Серверы Google временно недоступны. Это не ваша ошибка. Пожалуйста, попробуйте еще раз через несколько минут.';
-    } else if (error instanceof TypeError && error.message.includes('fetch')) {
-         code = '[Network Error] FAILED_TO_FETCH';
-         fix = 'Не удалось подключиться к серверам Google. Проверьте ваше интернет-соединение и убедитесь, что никакие расширения (например, AdBlock) не блокируют запросы к `generativelanguage.googleapis.com`.';
-    } else if (code.includes('response did not match the schema')) {
-        code = '[Schema Mismatch Error]';
-        fix = 'Нейросеть вернула ответ, не соответствующий требуемому формату. Это может быть временной проблемой. Попробуйте сгенерировать меню еще раз или проверьте/измените промты в настройках.';
-    }  else if (code.includes('API key is invalid')) {
-        code = '[400 Bad Request] API_KEY_INVALID';
-        fix = 'Формат вашего ключа API неверный. Он должен начинаться с "AIzaSy". Проверьте, не скопировали ли вы лишние символы.';
-    }
-    
-    return { code, fix };
-}
-
-// --- Timer Functions ---
+// --- TIMER LOGIC ---
 function startTimer(timerId) {
-    const timer = AppState.timers[timerId]; if (!timer || timer.interval) return; 
+    const timer = AppState.timers[timerId];
+    if (!timer || timer.running) return;
+    
     timer.running = true;
-    const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) { controls.querySelector('.start-btn').disabled = true; controls.querySelector('.pause-btn').disabled = false; }
+    const timerContainer = document.querySelector(`.timer-container[data-timer-id="${timerId}"]`);
+    if(timerContainer) {
+        timerContainer.querySelector('.start-btn').disabled = true;
+        timerContainer.querySelector('.pause-btn').disabled = false;
+    }
+
     timer.interval = setInterval(() => {
         timer.remaining--;
         updateTimerDisplay(timerId);
         if (timer.remaining <= 0) {
-            clearInterval(timer.interval);
-            timer.running = false; timer.interval = null; timer.remaining = 0;
-            showToast("Этап завершён!");
-            alarmSound.play().catch(e => console.log("Playback prevented", e));
-            if(controls) controls.querySelector('.pause-btn').disabled = true;
+            pauseTimer(timerId);
+            alarmSound.play();
+            showToast("Время вышло!");
         }
-        if (timer.remaining % 5 === 0) saveStateToLocalStorage();
     }, 1000);
+    saveStateToLocalStorage();
 }
 
 function pauseTimer(timerId) {
-    const timer = AppState.timers[timerId]; if (!timer || !timer.running) return;
+    const timer = AppState.timers[timerId];
+    if (!timer || !timer.running) return;
+    
+    timer.running = false;
     clearInterval(timer.interval);
-    timer.running = false; timer.interval = null;
-    const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) { controls.querySelector('.start-btn').disabled = false; controls.querySelector('.pause-btn').disabled = true; }
+    timer.interval = null;
+    
+    const timerContainer = document.querySelector(`.timer-container[data-timer-id="${timerId}"]`);
+    if(timerContainer) {
+        timerContainer.querySelector('.start-btn').disabled = false;
+        timerContainer.querySelector('.pause-btn').disabled = true;
+    }
     saveStateToLocalStorage();
 }
 
 function resetTimer(timerId) {
-    const timer = AppState.timers[timerId]; if (!timer) return;
-    if (timer.interval) clearInterval(timer.interval);
-    timer.running = false; timer.interval = null; timer.remaining = timer.duration;
+    const timer = AppState.timers[timerId];
+    if (!timer) return;
+    
+    pauseTimer(timerId);
+    timer.remaining = timer.duration;
     updateTimerDisplay(timerId);
-    const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) { controls.querySelector('.start-btn').disabled = false; controls.querySelector('.pause-btn').disabled = true; }
     saveStateToLocalStorage();
 }
 
 function updateTimerDisplay(timerId) {
-    const timer = AppState.timers[timerId]; if (!timer) return;
-    const display = document.querySelector(`[data-timer-id="${timerId}"] .timer-display`);
-    if(display) {
+    const timer = AppState.timers[timerId];
+    if (!timer) return;
+    const timerDisplay = document.querySelector(`.timer-container[data-timer-id="${timerId}"] .timer-display`);
+    if(timerDisplay) {
         const minutes = Math.floor(timer.remaining / 60).toString().padStart(2, '0');
         const seconds = (timer.remaining % 60).toString().padStart(2, '0');
-        display.textContent = `${minutes}:${seconds}`;
+        timerDisplay.textContent = `${minutes}:${seconds}`;
     }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+
+// --- Error Handling & Diagnostics ---
+function getErrorMessage(error) {
+    const defaultFix = "Проверьте ваше интернет-соединение и попробуйте снова. Если проблема повторяется, возможно, сервисы Google временно недоступны.";
+    let message = error.message || 'Произошла неизвестная ошибка.';
+    let fix = defaultFix;
+    let link = null;
+
+    if (message.includes("Failed to fetch")) {
+        message = "Сетевая ошибка.";
+        fix = "Не удалось подключиться к серверам Google. Проверьте ваше интернет-соединение, отключите VPN/прокси и попробуйте снова. Возможно, это временная проблема на стороне Google.";
+        link = { text: "Проверить статус сервисов Google", url: "https://status.cloud.google.com/" };
+    } else if (message.includes("API key not valid")) {
+        message = "Неверный API ключ.";
+        fix = "Пожалуйста, проверьте правильность введенного API ключа в настройках.";
+    } else if (message.includes("overloaded") || (error.error && error.error.code === 503)) {
+        message = "Серверы AI перегружены.";
+        fix = "Это временная проблема на стороне Google. Пожалуйста, подождите несколько минут и попробуйте снова.";
+        link = { text: "Проверить статус сервисов Google", url: "https://status.cloud.google.com/" };
+    } else if (message.includes("Content creation is blocked")) {
+        message = "Запрос заблокирован политикой безопасности.";
+        fix = "Ваш запрос содержит потенциально небезопасный контент. Попробуйте изменить формулировки в настройках или в редакторе промтов.";
+    } else if (message.includes("quota")) {
+        message = "Превышена квота использования API.";
+        fix = "Вы достигли лимита запросов для вашего ключа. Проверьте лимиты в вашей Google Cloud Console.";
+        link = { text: "Перейти в Google Cloud Console", url: "https://console.cloud.google.com/" };
+    } else if (message.includes("billing account")) {
+        message = "Проблема с биллингом.";
+        fix = "Убедитесь, что к вашему проекту Google Cloud привязан активный биллинговый аккаунт.";
+        link = { text: "Перейти в настройки биллинга", url: "https://console.cloud.google.com/billing" };
+    }
+    
+    return { message, fix, link };
+}
+
+async function runAiDiagnostics() {
+    DOM.diagnosticsResults.innerHTML = '';
+    DOM.diagnosticsResults.classList.add('visible');
+    const keyMode = AppState.aiKeyMode;
+    const key = (keyMode === 'manual') ? AppState.apiKey : (typeof process !== 'undefined' && process.env.API_KEY);
+
+    // Step 1: Key presence
+    let step1Result = `<div class="diagnostic-step">
+        <div class="step-title">Шаг 1: Проверка наличия ключа</div>`;
+    if (key) {
+        step1Result += `<div class="step-status success">УСПЕХ</div>
+            <div class="step-details">Ключ найден в режиме: <strong>${keyMode === 'manual' ? 'Ручной' : 'Автоматический'}</strong>.</div>`;
+    } else {
+        step1Result += `<div class="step-status error">ПРОВАЛЕН</div>
+            <div class="step-details">Ключ не найден в режиме: <strong>${keyMode}</strong>.</div>
+            <div class="step-fix">${keyMode === 'auto' ? 'Убедитесь, что вы добавили секрет API_KEY в настройках репозитория GitHub.' : 'Введите и сохраните ваш API ключ вручную.'}</div>`;
+    }
+    step1Result += `</div>`;
+    DOM.diagnosticsResults.innerHTML += step1Result;
+    if (!key) return;
+
+    // Step 2: Basic API Test
+    let step2Result = `<div class="diagnostic-step">
+        <div class="step-title">Шаг 2: Базовый тест API (проверка ключа)</div>`;
+    try {
+        const testAi = new GoogleGenAI({ apiKey: key });
+        await testAi.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
+        step2Result += `<div class="step-status success">УСПЕХ</div>
+            <div class="step-details">Ключ действителен и соединение с API установлено.</div>`;
+    } catch (e) {
+        const errorInfo = getErrorMessage(e);
+        step2Result += `<div class="step-status error">ПРОВАЛЕН</div>
+            <div class="step-details"><strong>Ошибка:</strong> ${escapeHtml(errorInfo.message)}</div>
+            <div class="step-fix">${errorInfo.fix} ${errorInfo.link ? `<a href="${errorInfo.link.url}" target="_blank">${errorInfo.link.text}</a>` : ''}</div>`;
+        step2Result += `</div>`;
+        DOM.diagnosticsResults.innerHTML += step2Result;
+        return;
+    }
+    step2Result += `</div>`;
+    DOM.diagnosticsResults.innerHTML += step2Result;
+
+    // Step 3: Real Generation Test
+    let step3Result = `<div class="diagnostic-step">
+        <div class="step-title">Шаг 3: Тест генерации (простой JSON)</div>`;
+    try {
+        const testAi = new GoogleGenAI({ apiKey: key });
+        const testSchema = { type: Type.OBJECT, properties: { recipeName: { type: Type.STRING }, ingredients: { type: Type.ARRAY, items: { type: Type.STRING } } } };
+        const response = await testAi.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: 'Create a simple omelette recipe in Russian as a JSON object.',
+            config: { responseMimeType: "application/json", responseSchema: testSchema },
+        });
+        const parsedResponse = JSON.parse(response.text);
+
+        step3Result += `<div class="step-status success">УСПЕХ</div>
+            <div class="step-details">Нейросеть успешно сгенерировала структурированный ответ.</div>
+            <div class="ai-response"><strong>Ответ от AI:</strong><br>${escapeHtml(JSON.stringify(parsedResponse, null, 2))}</div>`;
+    } catch (e) {
+        const errorInfo = getErrorMessage(e);
+        step3Result += `<div class="step-status error">ПРОВАЛЕН</div>
+            <div class="step-details"><strong>Ошибка:</strong> ${escapeHtml(errorInfo.message)}</div>
+            <div class="step-fix">${errorInfo.fix} ${errorInfo.link ? `<a href="${errorInfo.link.url}" target="_blank">${errorInfo.link.text}</a>` : ''}</div>`;
+    }
+    step3Result += `</div>`;
+    DOM.diagnosticsResults.innerHTML += step3Result;
+}
+
+async function runAutofixRoutine() {
+    DOM.autofixLog.innerHTML = '';
+    DOM.autofixLog.classList.add('visible');
+
+    const log = (message, status = 'info') => {
+        DOM.autofixLog.innerHTML += `<div class="autofix-log-entry">
+            <div class="log-title log-status ${status}">${status.toUpperCase()}: ${message}</div>
+        </div>`;
+    };
+
+    log('Запуск автоматического исправления...');
+
+    // Step 1: Check network
+    log('Шаг 1: Проверка сетевого подключения...');
+    if (navigator.onLine) {
+        log('Интернет-соединение активно.', 'success');
+    } else {
+        log('Отсутствует интернет-соединение. Проверьте сеть.', 'error');
+        return;
+    }
+
+    // Step 2: Reset prompts
+    log('Шаг 2: Сброс промтов к значениям по умолчанию...');
+    resetPrompts(true); // silent reset
+    log('Промты сброшены.', 'success');
+    
+    // Step 3: Re-run diagnostics
+    log('Шаг 3: Запуск полной диагностики...');
+    await runAiDiagnostics();
+    
+    // Final step
+    setTimeout(() => {
+        const hasErrors = DOM.diagnosticsResults.querySelector('.error');
+        if (hasErrors) {
+            log('Авто-исправление завершено, но остались нерешенные проблемы. Пожалуйста, следуйте инструкциям в логе диагностики.', 'error');
+        } else {
+            log('Авто-исправление завершено. Все системы работают в штатном режиме. Попробуйте сгенерировать меню снова.', 'success');
+        }
+    }, 500);
+}
+
+// --- START APP ---
+init();
