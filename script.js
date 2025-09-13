@@ -23,7 +23,6 @@ const DOM = {
     incrementPeopleBtn: document.getElementById('increment-people'),
     generateAiBtn: document.getElementById('generate-ai-btn'),
     loadDemoBtn: document.getElementById('load-demo-btn'),
-    aiStatusIndicator: document.getElementById('ai-status-indicator'),
     menuContent: document.getElementById('menu-content'),
     recipesList: document.getElementById('recipes-list'),
     recipeDetailScreen: document.getElementById('recipe-detail-screen'),
@@ -94,22 +93,21 @@ function checkPwaPrompt() {
 }
 
 function initializeAI() {
-    const statusText = DOM.aiStatusIndicator.querySelector('.status-text');
     try {
         if (typeof process === 'undefined' || !process.env.API_KEY || process.env.API_KEY === '') {
             throw new Error("API_KEY environment variable not set.");
         }
         ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
-        DOM.aiStatusIndicator.className = 'ai-status ready';
-        statusText.textContent = "AI Готов";
+        DOM.globalSettingsBtn.classList.remove('ai-unavailable');
+        DOM.globalSettingsBtn.classList.add('ai-ready');
         DOM.generateAiBtn.disabled = false;
 
     } catch (error) {
         console.warn("Ключ API не настроен. Генерация с ИИ недоступна.");
         ai = null;
-        DOM.aiStatusIndicator.className = 'ai-status unavailable';
-        statusText.textContent = "AI Недоступен";
+        DOM.globalSettingsBtn.classList.remove('ai-ready');
+        DOM.globalSettingsBtn.classList.add('ai-unavailable');
         DOM.generateAiBtn.disabled = true;
     }
 }
