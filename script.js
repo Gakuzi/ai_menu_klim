@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "https://esm.run/@google/genai";
+import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
 
 const API_KEY = 'AIzaSyAHXBqiRczF4uG0Tofjgxj5zc17UoQUZBA';
 
@@ -19,8 +19,9 @@ const DOM = {
     screens: document.querySelectorAll('.screen'),
     navButtons: document.querySelectorAll('.nav-btn'),
     settingsForm: document.getElementById('settings-form'),
-    peopleSlider: document.getElementById('people-slider'),
     peopleValue: document.getElementById('people-value'),
+    decrementPeopleBtn: document.getElementById('decrement-people'),
+    incrementPeopleBtn: document.getElementById('increment-people'),
     generateButton: document.querySelector('#settings-form button[type="submit"]'),
     menuContent: document.getElementById('menu-content'),
     regenerateMenuBtn: document.getElementById('regenerate-menu'),
@@ -113,7 +114,7 @@ function loadStateFromLocalStorage() {
 
 function updateSettingsFromForm() {
     AppState.settings = {
-        people: DOM.peopleSlider.value,
+        people: DOM.peopleValue.textContent,
         days: document.getElementById('days-select').value,
         protein: document.querySelector('input[name="protein"]:checked').value,
         restrictions: Array.from(document.querySelectorAll('input[name="restrictions"]:checked')).map(el => el.value),
@@ -150,8 +151,12 @@ function renderApp() {
 function populateSettingsForm() {
     const { settings } = AppState;
     if (!settings) return;
-    DOM.peopleSlider.value = settings.people || 3;
-    DOM.peopleValue.textContent = settings.people || 3;
+
+    const people = parseInt(settings.people || 3, 10);
+    DOM.peopleValue.textContent = people;
+    DOM.decrementPeopleBtn.disabled = people <= 1;
+    DOM.incrementPeopleBtn.disabled = people >= 6;
+
     document.getElementById('days-select').value = settings.days || 7;
     document.querySelector(`input[name="protein"][value="${settings.protein || 'chicken'}"]`).checked = true;
     document.querySelectorAll('input[name="restrictions"]').forEach(el => el.checked = (settings.restrictions || ['no-fish', 'no-mushrooms']).includes(el.value));
@@ -298,7 +303,8 @@ function renderPrintView() {
 function registerEventListeners() {
     DOM.navButtons.forEach(button => button.addEventListener('click', () => navigateTo(button.dataset.screen)));
     DOM.settingsForm.addEventListener('submit', e => { e.preventDefault(); updateSettingsFromForm(); handleGeneration(); });
-    DOM.peopleSlider.addEventListener('input', e => { DOM.peopleValue.textContent = e.target.value; });
+    DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
+    DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
     DOM.regenerateMenuBtn.addEventListener('click', () => { if(confirm("Вы уверены? Текущее меню будет удалено.")) { updateSettingsFromForm(); handleGeneration(); } });
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
     DOM.menuContent.addEventListener('click', e => { const cell = e.target.closest('.clickable-meal'); if(cell?.dataset.recipeId) renderRecipeDetail(cell.dataset.recipeId); });
@@ -328,6 +334,19 @@ function registerEventListeners() {
     });
 }
 
+function updatePeopleCount(change) {
+    let currentValue = parseInt(DOM.peopleValue.textContent, 10);
+    const min = 1;
+    const max = 6;
+    let newValue = currentValue + change;
+    
+    if (newValue < min || newValue > max) return;
+
+    DOM.peopleValue.textContent = newValue;
+    DOM.decrementPeopleBtn.disabled = (newValue === min);
+    DOM.incrementPeopleBtn.disabled = (newValue === max);
+}
+
 function toggleCookedStatus(recipeId) {
     AppState.cookedMeals[recipeId] = !AppState.cookedMeals[recipeId];
     saveStateToLocalStorage();
@@ -336,7 +355,6 @@ function toggleCookedStatus(recipeId) {
     renderMenu();
 }
 
-// ... (other event handlers remain the same) ...
 function handleRecipeStepClick(e) {
     const timerContainer = e.target.closest('.timer-container');
     if (!timerContainer) return;
@@ -376,24 +394,76 @@ function handleTouchEnd() {
 }
 
 // --- API & GENERATION LOGIC ---
+const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+        menu: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    dayName: { type: Type.STRING },
+                    breakfast: { type: Type.STRING },
+                    snack1: { type: Type.STRING },
+                    lunch: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING },},},
+                    snack2: { type: Type.STRING },
+                    dinner: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING },},},
+                },
+            },
+        },
+        recipes: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING }, name: { type: Type.STRING }, isProteinBased: { type: Type.BOOLEAN },
+                    ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, quantity: { type: Type.STRING },},},},
+                    steps: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING }, timer: { type: Type.INTEGER, nullable: true },},},},
+                },
+            },
+        },
+        shoppingList: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    id: { type: Type.STRING }, name: { type: Type.STRING }, quantity: { type: Type.STRING }, category: { type: Type.STRING }, price: { type: Type.NUMBER },
+                },
+            },
+        },
+    },
+};
+
 async function handleGeneration() {
     if (!ai) { loadDefaultData(); return; }
     DOM.loaderModal.classList.add('visible');
     try {
         const prompt = createPrompt(AppState.settings);
-        const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
-        const textResponse = response.text.trim();
-        const jsonString = textResponse.startsWith('```json') ? textResponse.slice(7, -3) : textResponse;
-        const data = JSON.parse(jsonString);
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: responseSchema,
+            },
+        });
+        const data = JSON.parse(response.text);
+
+        // Convert recipes array into an object for easier lookup
+        const recipesObject = data.recipes.reduce((acc, recipe) => {
+            acc[recipe.id] = recipe;
+            return acc;
+        }, {});
+
         AppState.menu = data.menu;
-        AppState.recipes = data.recipes;
+        AppState.recipes = recipesObject;
         AppState.shoppingList = data.shoppingList.map(item => ({...item, completed: false}));
         AppState.cookedMeals = {};
         AppState.timers = {};
         saveStateToLocalStorage();
         renderApp();
         navigateTo('menu-screen');
-    } catch (error) { console.error("Error generating menu:", error); alert("Произошла ошибка при генерации меню.");
+    } catch (error) { console.error("Error generating menu:", error); alert("Произошла ошибка при генерации меню. Попробуйте снова.");
     } finally { DOM.loaderModal.classList.remove('visible'); }
 }
 
@@ -409,7 +479,7 @@ function loadDefaultData() {
 
 function createPrompt(settings) {
     const priceReference = `(reference: 7 days for 3 people is ~6872 RUB).`;
-    return `You are a professional and warm family meal planning assistant. Your task is to generate a complete meal plan based on user preferences. Provide the output ONLY in a single valid JSON object format, without any markdown formatting. The JSON must have this structure: { "menu": [], "recipes": {}, "shoppingList": [] }. User Preferences: - People: ${settings.people} - Days: ${settings.days} - Protein: ${settings.protein} - Restrictions: ${settings.restrictions.join(', ')} - Goal: ${settings.goal} - Allergies: ${settings.allergies || 'None'}. Rules: 1. Menu: Array for ${settings.days} days. Each day object needs: "dayName" (e.g., "Понедельник"), "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals. 2. Recipes: A dictionary with unique camelCase recipeIds. Each recipe needs: "name", "isProteinBased" (boolean), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes, optional }). 3. Shopping List: Consolidate all ingredients. Each item needs: "id" (unique kebab-case), "name", "quantity", "category" (from: "Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"), "price" (estimated price in RUB, proportional to people/days ${priceReference}). All text must be in Russian. Generate simple, common recipes suitable for a Russian family, with a cozy and appealing tone.`;
+    return `You are a professional and warm family meal planning assistant. Your task is to generate a complete meal plan based on user preferences. Provide the output ONLY in a single valid JSON object format, without any markdown formatting. The JSON must have this structure: { "menu": [], "recipes": [], "shoppingList": [] }. User Preferences: - People: ${settings.people} - Days: ${settings.days} - Protein: ${settings.protein} - Restrictions: ${settings.restrictions.join(', ')} - Goal: ${settings.goal} - Allergies: ${settings.allergies || 'None'}. Rules: 1. Menu: Array for ${settings.days} days. Each day object needs: "dayName" (e.g., "Понедельник"), "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals. 2. Recipes: An array of recipe objects. Each recipe must have a unique camelCase "id". Each recipe needs: "id", "name", "isProteinBased" (boolean), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes, optional }). 3. Shopping List: Consolidate all ingredients. Each item needs: "id" (unique kebab-case), "name", "quantity", "category" (from: "Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"), "price" (estimated price in RUB, proportional to people/days ${priceReference}). All text must be in Russian. Generate simple, common recipes suitable for a Russian family, with a cozy and appealing tone.`;
 }
 
 
