@@ -21,7 +21,9 @@ const DOM = {
     peopleValue: document.getElementById('people-value'),
     decrementPeopleBtn: document.getElementById('decrement-people'),
     incrementPeopleBtn: document.getElementById('increment-people'),
-    generateButton: document.querySelector('button[form="settings-form"]'),
+    generateAiBtn: document.getElementById('generate-ai-btn'),
+    loadDemoBtn: document.getElementById('load-demo-btn'),
+    aiStatusIndicator: document.getElementById('ai-status-indicator'),
     menuContent: document.getElementById('menu-content'),
     recipesList: document.getElementById('recipes-list'),
     recipeDetailScreen: document.getElementById('recipe-detail-screen'),
@@ -92,29 +94,42 @@ function checkPwaPrompt() {
 }
 
 function initializeAI() {
+    const statusText = DOM.aiStatusIndicator.querySelector('.status-text');
     try {
-        if (typeof process === 'undefined' || !process.env.API_KEY) {
+        if (typeof process === 'undefined' || !process.env.API_KEY || process.env.API_KEY === '') {
             throw new Error("API_KEY environment variable not set.");
         }
         ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        DOM.generateButton.textContent = "Сгенерировать меню";
+        
+        DOM.aiStatusIndicator.className = 'ai-status ready';
+        statusText.textContent = "AI Готов";
+        DOM.generateAiBtn.disabled = false;
+
     } catch (error) {
-        console.warn("Ключ API не настроен. Для генерации меню будет использоваться план по умолчанию.");
+        console.warn("Ключ API не настроен. Генерация с ИИ недоступна.");
         ai = null;
-        if(DOM.generateButton) DOM.generateButton.textContent = "Загрузить демо-план";
+        DOM.aiStatusIndicator.className = 'ai-status unavailable';
+        statusText.textContent = "AI Недоступен";
+        DOM.generateAiBtn.disabled = true;
     }
 }
 
 
 // --- STATE MANAGEMENT ---
+function getSerializableState() {
+    // Create a deep copy to avoid modifying the original AppState
+    const stateToSave = JSON.parse(JSON.stringify(AppState));
+    // Remove non-serializable interval IDs from the copy
+    for (const timerId in stateToSave.timers) {
+        delete stateToSave.timers[timerId].interval;
+    }
+    return stateToSave;
+}
+
+
 function saveStateToLocalStorage() {
     try {
-        // Create a copy of the state without the interval IDs
-        const stateToSave = { ...AppState, timers: {} };
-        for (const timerId in AppState.timers) {
-            const { interval, ...timerData } = AppState.timers[timerId];
-            stateToSave.timers[timerId] = timerData;
-        }
+        const stateToSave = getSerializableState();
         localStorage.setItem('familyMenuAppState', JSON.stringify(stateToSave));
     } catch (e) {
         console.error("Failed to save state to localStorage:", e);
@@ -129,6 +144,14 @@ function loadStateFromLocalStorage() {
             Object.assign(AppState, parsedState);
             AppState.cookedMeals = AppState.cookedMeals || {};
             AppState.timers = AppState.timers || {};
+            // Crucially, re-initialize timers if they were running
+            Object.values(AppState.timers).forEach(timer => {
+                if(timer.running) {
+                    // Don't start interval here, it will be started when the view is rendered
+                    timer.interval = null; 
+                }
+            });
+
         } catch (e) {
             console.error("Failed to parse state from localStorage, using defaults.", e);
             localStorage.removeItem('familyMenuAppState');
@@ -153,6 +176,11 @@ function updateSettingsFromForm() {
 // --- NAVIGATION ---
 function navigateTo(screenId) {
     const currentScreen = document.querySelector('.screen.active');
+    
+    if (currentScreen && currentScreen.id === 'recipe-detail-screen' && screenId !== 'recipe-detail-screen') {
+        detachAllTimers();
+    }
+    
     if (currentScreen) currentScreen.classList.remove('active');
     
     const nextScreen = document.getElementById(screenId);
@@ -172,6 +200,17 @@ function navigateTo(screenId) {
         scrollToCurrentDay();
     }
 }
+
+function detachAllTimers() {
+    for (const timerId in AppState.timers) {
+        const timer = AppState.timers[timerId];
+        if (timer.interval) {
+            clearInterval(timer.interval);
+            timer.interval = null; // Detach JS interval, but keep running state
+        }
+    }
+}
+
 
 function scrollToCurrentDay() {
     setTimeout(() => {
@@ -310,23 +349,12 @@ function updateStepVisibility(isNext = true) {
     const wrapper = DOM.recipeStepsContainer.querySelector('.recipe-step-wrapper');
     if (!wrapper) return;
 
-    // Clear interval for the outgoing step's timer
     const oldStep = wrapper.querySelector('.recipe-step.active');
     if(oldStep) {
-        const oldTimerContainer = oldStep.querySelector('.timer-container');
-        if (oldTimerContainer) {
-            const timerId = oldTimerContainer.dataset.timerId;
-            const timer = AppState.timers[timerId];
-            if (timer && timer.interval) {
-                clearInterval(timer.interval);
-                timer.interval = null; // Clear JS interval, but keep running state in AppState
-            }
-        }
         oldStep.classList.remove('active');
         oldStep.classList.add('exiting');
     }
     
-    // Activate the new step
     const newStep = wrapper.querySelector(`.recipe-step[data-step-index="${AppState.currentStepIndex}"]`);
     if (newStep) {
       newStep.classList.add('active');
@@ -358,7 +386,7 @@ function initializeTimersForStep(stepIndex) {
         
         const timer = AppState.timers[timerId];
         if (timer && timer.running && !timer.interval) {
-             startTimer(timerId); // Re-attach interval if it was running
+             startTimer(timerId); // Re-attach interval if it was running and detached
         }
         
         updateTimerDisplay(timerId);
@@ -411,18 +439,20 @@ function registerEventListeners() {
     DOM.globalSettingsBtn.addEventListener('click', () => navigateTo('settings-screen'));
     DOM.navButtons.forEach(button => button.addEventListener('click', () => navigateTo(button.dataset.screen)));
     
-    DOM.settingsForm.addEventListener('submit', e => { 
-        e.preventDefault();
+    const generationAction = () => {
         if (AppState.menu && AppState.menu.length > 0) {
             if (confirm("Вы уверены? Существующее меню будет заменено новым.")) {
-                updateSettingsFromForm(); 
+                updateSettingsFromForm();
                 handleGeneration();
             }
         } else {
-            updateSettingsFromForm(); 
+            updateSettingsFromForm();
             handleGeneration();
         }
-    });
+    };
+    
+    DOM.generateAiBtn.addEventListener('click', generationAction);
+    DOM.loadDemoBtn.addEventListener('click', loadDefaultData);
 
     DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
     DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
@@ -430,7 +460,6 @@ function registerEventListeners() {
     DOM.menuContent.addEventListener('click', handleMenuClick);
     DOM.backToRecipesBtn.addEventListener('click', () => navigateTo('recipes-screen'));
     
-    // NEW: Delegated listener for recipe navigation and actions
     DOM.recipeActions.addEventListener('click', handleRecipeNav);
     
     DOM.closePwaModal.addEventListener('click', () => { DOM.pwaModal.classList.remove('visible'); localStorage.setItem('pwaPromptShown', 'true'); });
@@ -487,7 +516,6 @@ function handleMenuClick(e) {
     const container = document.querySelector(`.recipe-quick-view[data-recipe-container="${recipeId}"]`);
     const isExpanded = container.classList.contains('expanded');
 
-    // Close all other quick views
     document.querySelectorAll('.recipe-quick-view.expanded').forEach(el => {
         if (el !== container) {
             el.classList.remove('expanded');
@@ -496,7 +524,6 @@ function handleMenuClick(e) {
         }
     });
 
-    // Toggle current quick view
     if (isExpanded) {
         container.classList.remove('expanded');
         target.classList.remove('expanded');
@@ -534,7 +561,6 @@ function handleRecipeStepClick(e) {
     if(e.target.classList.contains('pause-btn')) pauseTimer(timerId);
     if(e.target.classList.contains('reset-btn')) resetTimer(timerId);
 }
-// NEW: Handler for Next/Prev/Finish buttons
 function handleRecipeNav(e) {
     const recipe = AppState.recipes[AppState.currentRecipeId];
     if (!recipe) return;
@@ -623,7 +649,10 @@ const responseSchema = {
 };
 
 async function handleGeneration() {
-    if (!ai) { loadDefaultData(); return; }
+    if (!ai) { 
+        showToast("Генерация недоступна. API ключ не настроен.", true);
+        return; 
+    }
     DOM.loaderModal.classList.add('visible');
     try {
         const prompt = createPrompt(AppState.settings);
@@ -666,10 +695,11 @@ async function handleGeneration() {
 }
 
 function loadDefaultData() {
-    showToast("API ключ не найден. Загружен демо-план.");
+    showToast("Загружен демонстрационный план.");
     Object.assign(AppState, defaultPlan);
     AppState.shoppingList = AppState.shoppingList.map(item => ({...item, completed: false}));
     AppState.cookedMeals = AppState.cookedMeals || {};
+    AppState.timers = {};
     saveStateToLocalStorage();
     AppState.activeScreen = 'menu-screen';
     renderApp();
@@ -696,7 +726,9 @@ async function sharePlanViaQR() {
         return;
     }
     try {
-        const jsonString = JSON.stringify(AppState);
+        // CRITICAL FIX: Use a serializable version of the state
+        const stateToShare = getSerializableState();
+        const jsonString = JSON.stringify(stateToShare);
         const compressed = pako.deflate(jsonString, { to: 'string' });
         const base64 = btoa(compressed);
         
@@ -781,8 +813,9 @@ function exportToReminders() {
 
 function exportState() {
     try {
+        const stateToExport = getSerializableState();
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([JSON.stringify(AppState, null, 2)], { type: 'application/json' }));
+        link.href = URL.createObjectURL(new Blob([JSON.stringify(stateToExport, null, 2)], { type: 'application/json' }));
         link.download = `family-menu-backup-${new Date().toISOString().slice(0, 10)}.json`;
         link.click();
         URL.revokeObjectURL(link.href);
@@ -815,7 +848,7 @@ function importState(event) {
 // --- Timer Functions (REFACTORED) ---
 function startTimer(timerId) {
     const timer = AppState.timers[timerId];
-    if (!timer || timer.interval) return; // Don't start if already has an interval
+    if (!timer || timer.interval) return; 
 
     timer.running = true;
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
@@ -831,13 +864,16 @@ function startTimer(timerId) {
             clearInterval(timer.interval);
             timer.running = false;
             timer.interval = null;
+            timer.remaining = 0;
             showToast("Этап завершён!");
             alarmSound.play().catch(e => console.log("Playback prevented", e));
             if(controls) controls.querySelector('.pause-btn').disabled = true;
-            saveStateToLocalStorage();
+        }
+        // Save state periodically, not every second
+        if (timer.remaining % 5 === 0) {
+           saveStateToLocalStorage();
         }
     }, 1000);
-    saveStateToLocalStorage();
 }
 
 function pauseTimer(timerId) {

@@ -23,8 +23,14 @@
         <!-- Экран Настройки -->
         <div id="settings-screen" class="screen">
             <header class="screen-header">
-                <h1>Настройки плана</h1>
-                <p class="subtitle">Создайте идеальное меню для вашей семьи</p>
+                <div class="header-main-content">
+                    <h1>Настройки плана</h1>
+                    <p class="subtitle">Создайте идеальное меню для вашей семьи</p>
+                </div>
+                <div id="ai-status-indicator" class="ai-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text"></span>
+                </div>
             </header>
             <div class="screen-content">
                 <form id="settings-form" class="settings-form">
@@ -95,7 +101,8 @@
                 </div>
             </div>
              <div class="footer-action">
-                <button type="submit" form="settings-form" class="btn-primary">Сгенерировать меню</button>
+                <button id="generate-ai-btn" class="btn-primary" title="Сгенерировать новое меню с помощью ИИ">Сгенерировать с ИИ</button>
+                <button id="load-demo-btn" class="btn-secondary">Загрузить демо-план</button>
             </div>
         </div>
 

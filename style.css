@@ -79,6 +79,9 @@ body::before {
     margin-bottom: 2rem;
     padding: 0.5rem 0;
     padding-top: calc(env(safe-area-inset-top) + 1.5rem);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
 }
 
 .screen-header h1 {
@@ -97,12 +100,36 @@ body::before {
     flex-grow: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    /* CRITICAL FIX: Add enough padding for BOTH the nav bar and the action footer above it */
     padding-bottom: 180px; 
 }
 .screen-content::-webkit-scrollbar {
     display: none;
 }
+
+/* --- AI Status Indicator --- */
+.ai-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: rgba(255, 255, 255, 0.5);
+    padding: 6px 12px;
+    border-radius: 30px;
+    border: 1px solid var(--border-color);
+    font-size: 12px;
+    font-weight: 600;
+}
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--subtitle-color);
+    transition: background-color 0.3s;
+}
+.ai-status.ready .status-dot { background-color: var(--success-accent); }
+.ai-status.ready .status-text { color: var(--success-accent); }
+.ai-status.unavailable .status-dot { background-color: var(--warning-accent); }
+.ai-status.unavailable .status-text { color: var(--warning-accent); }
+
 
 /* --- Global Settings Button --- */
 .global-settings-btn {
@@ -286,12 +313,16 @@ select {
     color: white;
     box-shadow: 0 4px 12px rgba(139, 94, 60, 0.2);
 }
+.btn-primary:disabled {
+    background-color: var(--subtitle-color);
+    box-shadow: none;
+    cursor: not-allowed;
+}
 .btn-secondary {
     background-color: var(--border-color);
     color: var(--primary-accent);
 }
 
-/* CRITICAL LAYOUT FIX for action buttons */
 .footer-action {
     position: fixed;
     bottom: var(--nav-height); /* Position right above the main navigation */
@@ -307,6 +338,8 @@ select {
 }
 .footer-action button {
     pointer-events: all;
+    /* Ensure buttons have a base width to not get squished */
+    flex-basis: 0;
 }
 
 
