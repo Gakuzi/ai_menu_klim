@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
 
 const AppState = {
     apiKey: null,
+    aiKeyMode: 'auto', // 'auto' or 'manual'
     settings: {},
     menu: [],
     recipes: {},
@@ -56,7 +57,8 @@ const DOM = {
     apiKeyInput: document.getElementById('api-key-input'),
     verifyApiKeyBtn: document.getElementById('verify-api-key-btn'),
     aiConnectionStatus: document.getElementById('ai-connection-status'),
-    manualApiKeyContainer: document.getElementById('manual-api-key-container'),
+    manualApiKeyContainer: document.getElementById('manual-api-key-container').parentElement, // ai-connection-section
+    aiModeToggle: document.getElementById('ai-mode-toggle'),
 };
 
 const defaultPlan = {
@@ -85,7 +87,9 @@ async function init() {
             AppState.activeScreen = 'menu-screen';
         }
     }
-
+    
+    DOM.aiModeToggle.checked = AppState.aiKeyMode === 'manual';
+    
     await initializeAI();
     renderApp();
     registerEventListeners();
@@ -101,75 +105,103 @@ function checkPwaPrompt() {
 
 async function initializeAI() {
     let apiKey = null;
-    let isFromEnv = false;
-
-    // Priority 1: Check for environment variable (GitHub Secret)
-    try {
-        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-            apiKey = process.env.API_KEY;
-            isFromEnv = true;
-        }
-    } catch (e) { /* ignore ReferenceError in browser */ }
-
-    // Priority 2: Fallback to localStorage
-    if (!apiKey) {
-        apiKey = AppState.apiKey;
-    }
+    let success = false;
     
-    if (apiKey) {
-        const success = await verifyApiKey(apiKey);
-        if (success && isFromEnv) {
-            DOM.manualApiKeyContainer.classList.add('hidden');
+    DOM.manualApiKeyContainer.dataset.mode = AppState.aiKeyMode;
+
+    if (AppState.aiKeyMode === 'auto') {
+        try {
+            if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+                apiKey = process.env.API_KEY;
+                success = await verifyApiKey(apiKey, false); // Don't save env key
+                if (success) {
+                    updateAiStatus('ready-auto');
+                } else {
+                    // This case is unlikely if the key exists but is wrong
+                    updateAiStatus('unavailable-auto');
+                }
+            } else {
+                updateAiStatus('unavailable-auto');
+            }
+        } catch (e) {
+            updateAiStatus('unavailable-auto');
         }
-    } else {
-        updateAiStatus('unavailable', 'Ключ не найден. Введите его для активации AI.');
+    } else { // Manual mode
+        apiKey = AppState.apiKey;
+        if (apiKey) {
+            success = await verifyApiKey(apiKey, false); // verify without re-saving
+            if (success) {
+                updateAiStatus('ready-manual');
+            } else {
+                updateAiStatus('unavailable-manual-invalid');
+            }
+        } else {
+            updateAiStatus('unavailable-manual-empty');
+        }
     }
 }
 
 
-async function verifyApiKey(apiKey) {
-    if (!apiKey) {
-        updateAiStatus('unavailable', 'Ключ не может быть пустым.');
-        return false;
-    }
-
-    updateAiStatus('loading', 'Проверяем ключ...');
+async function verifyApiKey(apiKey, saveToState = true) {
+    if (!apiKey) return false;
     
     try {
         const tempAi = new GoogleGenAI({ apiKey });
         await tempAi.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
         
         ai = tempAi;
-        AppState.apiKey = apiKey;
-        saveStateToLocalStorage();
-        updateAiStatus('ready', 'AI готов к работе! Ключ сохранен.');
+        if (saveToState) {
+            AppState.apiKey = apiKey;
+            saveStateToLocalStorage();
+        }
         return true;
     } catch (error) {
         console.error("AI Verification Error:", error);
         ai = null;
-        updateAiStatus('unavailable', 'Ошибка: Ключ недействителен или проблема с сетью.');
         return false;
     }
 }
 
-function updateAiStatus(status, message) {
-    DOM.globalSettingsBtn.classList.remove('ai-ready', 'ai-unavailable');
-    DOM.aiConnectionStatus.classList.remove('success', 'error', 'loading');
-
+function updateAiStatus(status) {
+    DOM.globalSettingsBtn.className = 'global-settings-btn'; // Reset classes
+    DOM.aiConnectionStatus.className = 'status-text';
+    
+    let message = '';
+    
     switch(status) {
-        case 'ready':
-            DOM.globalSettingsBtn.classList.add('ai-ready');
+        case 'ready-auto':
+            DOM.globalSettingsBtn.classList.add('ai-ready-auto');
             DOM.generateAiBtn.disabled = false;
-            DOM.aiConnectionStatus.classList.add('success');
+            DOM.aiConnectionStatus.classList.add('success-auto');
+            message = 'AI готов. Используется автоматический режим (ключ из GitHub).';
             break;
-        case 'unavailable':
+        case 'ready-manual':
+            DOM.globalSettingsBtn.classList.add('ai-ready-manual');
+            DOM.generateAiBtn.disabled = false;
+            DOM.aiConnectionStatus.classList.add('success-manual');
+            message = 'AI готов. Используется сохраненный вручную ключ.';
+            break;
+        case 'unavailable-auto':
             DOM.globalSettingsBtn.classList.add('ai-unavailable');
             DOM.generateAiBtn.disabled = true;
             DOM.aiConnectionStatus.classList.add('error');
+            message = 'Авто-режим: Ключ не найден. Проверьте секреты репозитория (API_KEY) или включите ручной режим.';
+            break;
+        case 'unavailable-manual-invalid':
+            DOM.globalSettingsBtn.classList.add('ai-unavailable');
+            DOM.generateAiBtn.disabled = true;
+            DOM.aiConnectionStatus.classList.add('error');
+            message = 'Ручной режим: Сохраненный ключ недействителен. Проверьте и сохраните его снова.';
+            break;
+        case 'unavailable-manual-empty':
+             DOM.globalSettingsBtn.classList.add('ai-unavailable');
+            DOM.generateAiBtn.disabled = true;
+            DOM.aiConnectionStatus.classList.add('error');
+            message = 'Ручной режим: Введите API ключ для активации генерации.';
             break;
         case 'loading':
             DOM.generateAiBtn.disabled = true;
-            DOM.aiConnectionStatus.classList.add('loading');
+            message = 'Проверка ключа...';
             break;
     }
     DOM.aiConnectionStatus.textContent = message;
@@ -200,6 +232,7 @@ function loadStateFromLocalStorage() {
             Object.assign(AppState, parsedState);
             AppState.cookedMeals = AppState.cookedMeals || {};
             AppState.timers = AppState.timers || {};
+            AppState.aiKeyMode = AppState.aiKeyMode || 'auto';
             if (AppState.apiKey) {
                 DOM.apiKeyInput.value = AppState.apiKey;
             }
@@ -497,13 +530,26 @@ function registerEventListeners() {
     DOM.generateAiBtn.addEventListener('click', generationAction);
     DOM.loadDemoBtn.addEventListener('click', loadDefaultData);
     
+    DOM.aiModeToggle.addEventListener('change', (e) => {
+        AppState.aiKeyMode = e.target.checked ? 'manual' : 'auto';
+        saveStateToLocalStorage();
+        initializeAI();
+    });
+    
     DOM.verifyApiKeyBtn.addEventListener('click', async () => {
         const key = DOM.apiKeyInput.value.trim();
         const originalButtonText = DOM.verifyApiKeyBtn.textContent;
         DOM.verifyApiKeyBtn.disabled = true;
         DOM.verifyApiKeyBtn.textContent = 'Проверка...';
+        updateAiStatus('loading');
+
+        const success = await verifyApiKey(key, true);
         
-        await verifyApiKey(key);
+        if (success) {
+            updateAiStatus('ready-manual');
+        } else {
+            updateAiStatus('unavailable-manual-invalid');
+        }
         
         DOM.verifyApiKeyBtn.disabled = false;
         DOM.verifyApiKeyBtn.textContent = originalButtonText;

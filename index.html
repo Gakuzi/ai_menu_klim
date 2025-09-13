@@ -94,14 +94,22 @@
                         <input type="file" id="import-file-input" accept="application/json" style="display: none;">
                     </div>
 
-                    <div id="manual-api-key-container" class="ai-connection-section">
-                        <h2>Подключение AI</h2>
-                        <div class="form-group">
-                             <label for="api-key-input">Ваш API Ключ Google AI</label>
-                            <input type="password" id="api-key-input" placeholder="Введите ваш ключ...">
-                            <p id="ai-connection-status">Введите ключ для активации генерации.</p>
+                    <div class="ai-connection-section">
+                        <div class="ai-section-header">
+                            <h2>Подключение AI</h2>
+                            <label class="switch">
+                                <input type="checkbox" id="ai-mode-toggle">
+                                <span class="slider"></span>
+                            </label>
                         </div>
-                        <button id="verify-api-key-btn" class="btn-secondary">Проверить и сохранить ключ</button>
+                        <div id="manual-api-key-container">
+                             <div class="form-group">
+                                 <label for="api-key-input">Ваш API Ключ Google AI</label>
+                                <input type="password" id="api-key-input" placeholder="Введите ваш ключ...">
+                            </div>
+                            <button id="verify-api-key-btn" class="btn-secondary">Проверить и сохранить ключ</button>
+                        </div>
+                        <p id="ai-connection-status">Инициализация...</p>
                     </div>
                 </div>
             </div>
