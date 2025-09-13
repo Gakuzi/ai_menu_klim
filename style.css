@@ -97,7 +97,8 @@ body::before {
     flex-grow: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: calc(var(--nav-height) + 1.5rem); /* CRITICAL FIX: Prevents nav overlap */
+    /* CRITICAL FIX: Add enough padding for BOTH the nav bar and the action footer above it */
+    padding-bottom: 180px; 
 }
 .screen-content::-webkit-scrollbar {
     display: none;
@@ -275,6 +276,7 @@ select {
     font-size: 1.1rem; font-family: var(--font-family-heading); font-weight: 700;
     border: none; border-radius: 16px; cursor: pointer; text-align: center;
     transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    flex-grow: 1; /* For multi-button footers */
 }
 .btn-primary:active, .btn-secondary:active {
     transform: scale(0.97);
@@ -288,14 +290,20 @@ select {
     background-color: var(--border-color);
     color: var(--primary-accent);
 }
+
+/* CRITICAL LAYOUT FIX for action buttons */
 .footer-action {
-    position: absolute;
-    bottom: 0;
+    position: fixed;
+    bottom: var(--nav-height); /* Position right above the main navigation */
     left: 0;
     right: 0;
-    padding: 1rem 1.5rem calc(var(--nav-height) + 1rem) 1.5rem;
-    background: linear-gradient(180deg, transparent, var(--bg-color) 30%);
+    padding: 1rem 1.5rem;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+    background: linear-gradient(180deg, rgba(249, 247, 244, 0) 0%, var(--bg-color) 40%);
     pointer-events: none;
+    z-index: 90;
+    display: flex;
+    gap: 1rem;
 }
 .footer-action button {
     pointer-events: all;
@@ -539,14 +547,11 @@ select {
 #ingredients-section ul { list-style: none; }
 #ingredients-section li { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; font-size: 1.1rem; }
 
-#mark-cooked-btn {
+#mark-cooked-btn.cooked {
     background-color: var(--success-accent);
     color: white;
 }
-#mark-cooked-btn.cooked {
-    background-color: var(--border-color);
-    color: var(--subtitle-color);
-}
+
 
 /* --- Список Покупок --- */
 .shopping-summary {

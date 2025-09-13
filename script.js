@@ -109,7 +109,13 @@ function initializeAI() {
 // --- STATE MANAGEMENT ---
 function saveStateToLocalStorage() {
     try {
-        localStorage.setItem('familyMenuAppState', JSON.stringify(AppState));
+        // Create a copy of the state without the interval IDs
+        const stateToSave = { ...AppState, timers: {} };
+        for (const timerId in AppState.timers) {
+            const { interval, ...timerData } = AppState.timers[timerId];
+            stateToSave.timers[timerId] = timerData;
+        }
+        localStorage.setItem('familyMenuAppState', JSON.stringify(stateToSave));
     } catch (e) {
         console.error("Failed to save state to localStorage:", e);
     }
@@ -280,34 +286,63 @@ function renderRecipeDetail(recipeId) {
         </div>`).join('')}</div> <div id="ingredients-section-placeholder"></div>`;
     
     updateStepVisibility();
-    renderRecipeActions(recipeId);
     navigateTo('recipe-detail-screen');
 }
 
 function renderRecipeActions(recipeId) {
+    const recipe = AppState.recipes[recipeId];
+    const currentStep = AppState.currentStepIndex;
+    const totalSteps = recipe.steps.length;
     const isCooked = AppState.cookedMeals[recipeId];
-    DOM.recipeActions.innerHTML = `<button id="mark-cooked-btn" class="btn-secondary ${isCooked ? 'cooked' : ''}">${isCooked ? 'Отметить как не готовое' : 'Я приготовил(а)'}</button>`;
+
+    const prevButtonHtml = currentStep > 0
+        ? `<button id="prev-step-btn" class="btn-secondary">← Назад</button>`
+        : ``;
+
+    const nextButtonHtml = currentStep < totalSteps - 1
+        ? `<button id="next-step-btn" class="btn-primary">Далее →</button>`
+        : `<button id="mark-cooked-btn" class="btn-primary ${isCooked ? 'cooked' : ''}">Завершить ✓</button>`;
+
+    DOM.recipeActions.innerHTML = `${prevButtonHtml}${nextButtonHtml}`;
 }
 
 function updateStepVisibility(isNext = true) {
     const wrapper = DOM.recipeStepsContainer.querySelector('.recipe-step-wrapper');
     if (!wrapper) return;
 
-    const steps = wrapper.querySelectorAll('.recipe-step');
+    // Clear interval for the outgoing step's timer
     const oldStep = wrapper.querySelector('.recipe-step.active');
-    if(oldStep) { oldStep.classList.remove('active'); oldStep.classList.add('exiting'); }
+    if(oldStep) {
+        const oldTimerContainer = oldStep.querySelector('.timer-container');
+        if (oldTimerContainer) {
+            const timerId = oldTimerContainer.dataset.timerId;
+            const timer = AppState.timers[timerId];
+            if (timer && timer.interval) {
+                clearInterval(timer.interval);
+                timer.interval = null; // Clear JS interval, but keep running state in AppState
+            }
+        }
+        oldStep.classList.remove('active');
+        oldStep.classList.add('exiting');
+    }
     
-    const newStep = steps[AppState.currentStepIndex];
-    newStep.classList.add('active');
+    // Activate the new step
+    const newStep = wrapper.querySelector(`.recipe-step[data-step-index="${AppState.currentStepIndex}"]`);
+    if (newStep) {
+      newStep.classList.add('active');
+    }
 
-    DOM.stepProgressBar.style.width = `${((AppState.currentStepIndex + 1) / steps.length) * 100}%`;
+    DOM.stepProgressBar.style.width = `${((AppState.currentStepIndex + 1) / AppState.recipes[AppState.currentRecipeId].steps.length) * 100}%`;
 
     const ingredientsPlaceholder = document.getElementById('ingredients-section-placeholder');
-    if (AppState.currentStepIndex === steps.length - 1) {
+    if (AppState.currentStepIndex === AppState.recipes[AppState.currentRecipeId].steps.length - 1) {
         ingredientsPlaceholder.innerHTML = getIngredientsHtmlForRecipe(AppState.recipes[AppState.currentRecipeId]);
-    } else { ingredientsPlaceholder.innerHTML = ''; }
+    } else {
+        ingredientsPlaceholder.innerHTML = '';
+    }
 
     initializeTimersForStep(AppState.currentStepIndex);
+    renderRecipeActions(AppState.currentRecipeId);
 }
 
 function initializeTimersForStep(stepIndex) {
@@ -320,6 +355,12 @@ function initializeTimersForStep(stepIndex) {
         if (step?.timer && !AppState.timers[timerId]) {
             AppState.timers[timerId] = { duration: step.timer * 60, remaining: step.timer * 60, interval: null, running: false };
         }
+        
+        const timer = AppState.timers[timerId];
+        if (timer && timer.running && !timer.interval) {
+             startTimer(timerId); // Re-attach interval if it was running
+        }
+        
         updateTimerDisplay(timerId);
     }
 }
@@ -388,7 +429,10 @@ function registerEventListeners() {
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
     DOM.menuContent.addEventListener('click', handleMenuClick);
     DOM.backToRecipesBtn.addEventListener('click', () => navigateTo('recipes-screen'));
-    DOM.recipeActions.addEventListener('click', e => { if (e.target.id === 'mark-cooked-btn') toggleCookedStatus(AppState.currentRecipeId); });
+    
+    // NEW: Delegated listener for recipe navigation and actions
+    DOM.recipeActions.addEventListener('click', handleRecipeNav);
+    
     DOM.closePwaModal.addEventListener('click', () => { DOM.pwaModal.classList.remove('visible'); localStorage.setItem('pwaPromptShown', 'true'); });
     DOM.exportRemindersButton.addEventListener('click', exportToReminders);
     DOM.exportDataBtn.addEventListener('click', exportState);
@@ -476,7 +520,6 @@ function handleMenuClick(e) {
                     `).join('')}
                 </div>
             `;
-            initializeTimersForStep(0); // Assuming quick view shows all steps, init all timers
             container.classList.add('expanded');
             target.classList.add('expanded');
         }
@@ -490,6 +533,23 @@ function handleRecipeStepClick(e) {
     if(e.target.classList.contains('start-btn')) startTimer(timerId);
     if(e.target.classList.contains('pause-btn')) pauseTimer(timerId);
     if(e.target.classList.contains('reset-btn')) resetTimer(timerId);
+}
+// NEW: Handler for Next/Prev/Finish buttons
+function handleRecipeNav(e) {
+    const recipe = AppState.recipes[AppState.currentRecipeId];
+    if (!recipe) return;
+
+    if (e.target.id === 'next-step-btn' && AppState.currentStepIndex < recipe.steps.length - 1) {
+        AppState.currentStepIndex++;
+        updateStepVisibility(true);
+    } else if (e.target.id === 'prev-step-btn' && AppState.currentStepIndex > 0) {
+        AppState.currentStepIndex--;
+        updateStepVisibility(false);
+    } else if (e.target.id === 'mark-cooked-btn') {
+        toggleCookedStatus(AppState.currentRecipeId);
+        showToast("Рецепт отмечен как приготовленный!");
+        navigateTo('recipes-screen');
+    }
 }
 function handleTouchStart(e) {
     const stepWrapper = e.target.closest('.recipe-step-wrapper');
@@ -752,13 +812,18 @@ function importState(event) {
     reader.readAsText(file);
 }
 
-// Timer Functions
+// --- Timer Functions (REFACTORED) ---
 function startTimer(timerId) {
     const timer = AppState.timers[timerId];
-    if (!timer || timer.running) return;
+    if (!timer || timer.interval) return; // Don't start if already has an interval
+
     timer.running = true;
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) { controls.querySelector('.start-btn').disabled = true; controls.querySelector('.pause-btn').disabled = false; }
+    if(controls) {
+        controls.querySelector('.start-btn').disabled = true;
+        controls.querySelector('.pause-btn').disabled = false;
+    }
+
     timer.interval = setInterval(() => {
         timer.remaining--;
         updateTimerDisplay(timerId);
@@ -769,31 +834,46 @@ function startTimer(timerId) {
             showToast("Этап завершён!");
             alarmSound.play().catch(e => console.log("Playback prevented", e));
             if(controls) controls.querySelector('.pause-btn').disabled = true;
+            saveStateToLocalStorage();
         }
     }, 1000);
     saveStateToLocalStorage();
 }
+
 function pauseTimer(timerId) {
     const timer = AppState.timers[timerId];
     if (!timer || !timer.running) return;
+    
     clearInterval(timer.interval);
     timer.running = false;
     timer.interval = null;
+    
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) { controls.querySelector('.start-btn').disabled = false; controls.querySelector('.pause-btn').disabled = true; }
+    if(controls) {
+        controls.querySelector('.start-btn').disabled = false;
+        controls.querySelector('.pause-btn').disabled = true;
+    }
     saveStateToLocalStorage();
 }
+
 function resetTimer(timerId) {
     const timer = AppState.timers[timerId];
     if (!timer) return;
+    
     if (timer.interval) clearInterval(timer.interval);
     timer.running = false;
+    timer.interval = null;
     timer.remaining = timer.duration;
+    
     updateTimerDisplay(timerId);
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) { controls.querySelector('.start-btn').disabled = false; controls.querySelector('.pause-btn').disabled = true; }
+    if(controls) {
+        controls.querySelector('.start-btn').disabled = false;
+        controls.querySelector('.pause-btn').disabled = true;
+    }
     saveStateToLocalStorage();
 }
+
 function updateTimerDisplay(timerId) {
     const timer = AppState.timers[timerId];
     if (!timer) return;
