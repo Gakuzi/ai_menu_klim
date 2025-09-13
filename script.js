@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "https://esm.run/@google/genai";
 
 const AppState = {
+    apiKey: null,
     settings: {},
     menu: [],
     recipes: {},
@@ -51,6 +52,9 @@ const DOM = {
     qrScannerModal: document.getElementById('qr-scanner-modal'),
     qrVideo: document.getElementById('qr-video'),
     closeScannerModal: document.getElementById('close-scanner-modal'),
+    apiKeyInput: document.getElementById('api-key-input'),
+    verifyApiKeyBtn: document.getElementById('verify-api-key-btn'),
+    aiConnectionStatus: document.getElementById('ai-connection-status'),
 };
 
 const defaultPlan = {
@@ -67,7 +71,8 @@ let touchCurrentX = 0;
 let isSwiping = false;
 let qrAnimation;
 
-function init() {
+// --- INITIALIZATION ---
+async function init() {
     loadStateFromLocalStorage();
     
     if (!AppState.menu || AppState.menu.length === 0) {
@@ -79,7 +84,7 @@ function init() {
         }
     }
 
-    initializeAI(); 
+    await verifyAndInitializeAI(); // Non-blocking check on startup
     renderApp();
     registerEventListeners();
     checkPwaPrompt();
@@ -92,59 +97,69 @@ function checkPwaPrompt() {
     }
 }
 
-function initializeAI() {
-    let apiKey = null;
-    // Safely check for the API key in a browser environment to prevent crashes.
-    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-        apiKey = process.env.API_KEY;
+async function verifyAndInitializeAI(apiKeyOverride = null) {
+    let apiKey = apiKeyOverride || AppState.apiKey;
+     if (!apiKey) {
+        // Fallback for deployments with environment variables
+        try {
+            if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+                apiKey = process.env.API_KEY;
+            }
+        } catch (e) { /* ignore ReferenceError in browser */ }
     }
 
-    if (apiKey && apiKey !== '') {
-        try {
-            ai = new GoogleGenAI({ apiKey: apiKey });
-            // AI is ready, update UI
-            DOM.globalSettingsBtn.classList.remove('ai-unavailable');
-            DOM.globalSettingsBtn.classList.add('ai-ready');
-            DOM.generateAiBtn.disabled = false;
-            console.log("AI initialized successfully.");
-        } catch (error) {
-            // This would catch errors from the GoogleGenAI constructor itself
-            console.error("Error initializing GoogleGenAI:", error);
-            ai = null;
-            DOM.globalSettingsBtn.classList.remove('ai-ready');
-            DOM.globalSettingsBtn.classList.add('ai-unavailable');
-            DOM.generateAiBtn.disabled = true;
-        }
-    } else {
-        // API key is not available, update UI
-        console.warn("Ключ API не настроен. Генерация с ИИ недоступна.");
+    if (!apiKey) {
+        updateAiStatus('unavailable', 'Ключ не найден. Введите его для активации AI.');
+        return;
+    }
+
+    try {
+        ai = new GoogleGenAI({ apiKey });
+        // Perform a lightweight test call to validate the key
+        await ai.models.generateContent({model: 'gemini-2.5-flash', contents: 'test'});
+        
+        AppState.apiKey = apiKey;
+        saveStateToLocalStorage();
+        updateAiStatus('ready', 'AI готов к работе! Ключ сохранен.');
+    } catch (error) {
+        console.error("AI Verification Error:", error);
         ai = null;
-        DOM.globalSettingsBtn.classList.remove('ai-ready');
+        updateAiStatus('unavailable', 'Ошибка: Ключ недействителен или проблема с сетью.');
+    }
+}
+
+function updateAiStatus(status, message) {
+    DOM.globalSettingsBtn.classList.remove('ai-ready', 'ai-unavailable');
+    DOM.aiConnectionStatus.classList.remove('success', 'error');
+
+    if (status === 'ready') {
+        DOM.globalSettingsBtn.classList.add('ai-ready');
+        DOM.generateAiBtn.disabled = false;
+        DOM.aiConnectionStatus.textContent = message;
+        DOM.aiConnectionStatus.classList.add('success');
+    } else {
         DOM.globalSettingsBtn.classList.add('ai-unavailable');
         DOM.generateAiBtn.disabled = true;
+        DOM.aiConnectionStatus.textContent = message;
+        DOM.aiConnectionStatus.classList.add('error');
     }
 }
 
 
 // --- STATE MANAGEMENT ---
 function getSerializableState() {
-    // Create a deep copy to avoid modifying the original AppState
     const stateToSave = JSON.parse(JSON.stringify(AppState));
-    // Remove non-serializable interval IDs from the copy
     for (const timerId in stateToSave.timers) {
         delete stateToSave.timers[timerId].interval;
     }
     return stateToSave;
 }
 
-
 function saveStateToLocalStorage() {
     try {
         const stateToSave = getSerializableState();
         localStorage.setItem('familyMenuAppState', JSON.stringify(stateToSave));
-    } catch (e) {
-        console.error("Failed to save state to localStorage:", e);
-    }
+    } catch (e) { console.error("Failed to save state:", e); }
 }
 
 function loadStateFromLocalStorage() {
@@ -155,16 +170,14 @@ function loadStateFromLocalStorage() {
             Object.assign(AppState, parsedState);
             AppState.cookedMeals = AppState.cookedMeals || {};
             AppState.timers = AppState.timers || {};
-            // Crucially, re-initialize timers if they were running
+            if (AppState.apiKey) {
+                DOM.apiKeyInput.value = AppState.apiKey;
+            }
             Object.values(AppState.timers).forEach(timer => {
-                if(timer.running) {
-                    // Don't start interval here, it will be started when the view is rendered
-                    timer.interval = null; 
-                }
+                if(timer.running) timer.interval = null; 
             });
-
         } catch (e) {
-            console.error("Failed to parse state from localStorage, using defaults.", e);
+            console.error("Failed to parse state, using defaults.", e);
             localStorage.removeItem('familyMenuAppState');
         }
     }
@@ -183,15 +196,12 @@ function updateSettingsFromForm() {
     saveStateToLocalStorage();
 }
 
-
 // --- NAVIGATION ---
 function navigateTo(screenId) {
     const currentScreen = document.querySelector('.screen.active');
-    
     if (currentScreen && currentScreen.id === 'recipe-detail-screen' && screenId !== 'recipe-detail-screen') {
         detachAllTimers();
     }
-    
     if (currentScreen) currentScreen.classList.remove('active');
     
     const nextScreen = document.getElementById(screenId);
@@ -217,11 +227,10 @@ function detachAllTimers() {
         const timer = AppState.timers[timerId];
         if (timer.interval) {
             clearInterval(timer.interval);
-            timer.interval = null; // Detach JS interval, but keep running state
+            timer.interval = null;
         }
     }
 }
-
 
 function scrollToCurrentDay() {
     setTimeout(() => {
@@ -242,7 +251,6 @@ function scrollToCurrentDay() {
     }, 200);
 }
 
-
 // --- RENDERING ---
 function renderApp() {
     renderMenu();
@@ -255,12 +263,10 @@ function renderApp() {
 function populateSettingsForm() {
     const { settings } = AppState;
     if (!settings || Object.keys(settings).length === 0) return;
-
     const people = parseInt(settings.people || 3, 10);
     DOM.peopleValue.textContent = people;
     DOM.decrementPeopleBtn.disabled = people <= 1;
     DOM.incrementPeopleBtn.disabled = people >= 6;
-
     document.getElementById('days-select').value = settings.days || 7;
     document.querySelector(`input[name="protein"][value="${settings.protein || 'chicken'}"]`).checked = true;
     document.querySelectorAll('input[name="restrictions"]').forEach(el => el.checked = (settings.restrictions || ['no-fish', 'no-mushrooms']).includes(el.value));
@@ -304,7 +310,6 @@ function renderMenu() {
         </div>`).join('');
 }
 
-
 function renderRecipesList() {
     if (Object.keys(AppState.recipes).length === 0) {
         DOM.recipesList.innerHTML = `<p>Нет доступных рецептов. Сгенерируйте меню.</p>`; return;
@@ -327,7 +332,6 @@ function renderRecipeDetail(recipeId) {
     if (!recipe) return;
     
     DOM.recipeTitleDetail.textContent = recipe.name;
-
     DOM.recipeStepsContainer.innerHTML = `<div class="recipe-step-wrapper">${recipe.steps.map((step, index) => `
         <div class="recipe-step" data-step-index="${index}">
             <img src="https://placehold.co/600x400/${index % 2 === 0 ? 'D4A373' : '5E7A6E'}/F9F7F4?text=${encodeURIComponent(step.title)}" alt="${step.title}">
@@ -367,9 +371,7 @@ function updateStepVisibility(isNext = true) {
     }
     
     const newStep = wrapper.querySelector(`.recipe-step[data-step-index="${AppState.currentStepIndex}"]`);
-    if (newStep) {
-      newStep.classList.add('active');
-    }
+    if (newStep) newStep.classList.add('active');
 
     DOM.stepProgressBar.style.width = `${((AppState.currentStepIndex + 1) / AppState.recipes[AppState.currentRecipeId].steps.length) * 100}%`;
 
@@ -397,7 +399,7 @@ function initializeTimersForStep(stepIndex) {
         
         const timer = AppState.timers[timerId];
         if (timer && timer.running && !timer.interval) {
-             startTimer(timerId); // Re-attach interval if it was running and detached
+             startTimer(timerId);
         }
         
         updateTimerDisplay(timerId);
@@ -464,15 +466,21 @@ function registerEventListeners() {
     
     DOM.generateAiBtn.addEventListener('click', generationAction);
     DOM.loadDemoBtn.addEventListener('click', loadDefaultData);
+    DOM.verifyApiKeyBtn.addEventListener('click', () => {
+        const key = DOM.apiKeyInput.value.trim();
+        if (key) {
+            verifyAndInitializeAI(key);
+        } else {
+            showToast("Пожалуйста, введите API ключ.", true);
+        }
+    });
 
     DOM.decrementPeopleBtn.addEventListener('click', () => updatePeopleCount(-1));
     DOM.incrementPeopleBtn.addEventListener('click', () => updatePeopleCount(1));
     DOM.recipesList.addEventListener('click', e => { const card = e.target.closest('.recipe-card'); if (card) renderRecipeDetail(card.dataset.recipeId); });
     DOM.menuContent.addEventListener('click', handleMenuClick);
     DOM.backToRecipesBtn.addEventListener('click', () => navigateTo('recipes-screen'));
-    
     DOM.recipeActions.addEventListener('click', handleRecipeNav);
-    
     DOM.closePwaModal.addEventListener('click', () => { DOM.pwaModal.classList.remove('visible'); localStorage.setItem('pwaPromptShown', 'true'); });
     DOM.exportRemindersButton.addEventListener('click', exportToReminders);
     DOM.exportDataBtn.addEventListener('click', exportState);
@@ -483,7 +491,6 @@ function registerEventListeners() {
     DOM.closeQrModal.addEventListener('click', () => DOM.qrCodeModal.classList.remove('visible'));
     DOM.closeScannerModal.addEventListener('click', stopQrScanner);
     DOM.printBtn.addEventListener('click', () => navigateTo('print-screen'));
-
     DOM.recipeStepsContainer.addEventListener('click', handleRecipeStepClick);
     DOM.recipeStepsContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
     DOM.recipeStepsContainer.addEventListener('touchmove', handleTouchMove, { passive: true });
@@ -500,12 +507,9 @@ function registerEventListeners() {
 
 function updatePeopleCount(change) {
     let currentValue = parseInt(DOM.peopleValue.textContent, 10);
-    const min = 1;
-    const max = 6;
+    const min = 1; const max = 6;
     let newValue = currentValue + change;
-    
     if (newValue < min || newValue > max) return;
-
     DOM.peopleValue.textContent = newValue;
     DOM.decrementPeopleBtn.disabled = (newValue === min);
     DOM.incrementPeopleBtn.disabled = (newValue === max);
@@ -515,18 +519,16 @@ function toggleCookedStatus(recipeId) {
     AppState.cookedMeals[recipeId] = !AppState.cookedMeals[recipeId];
     saveStateToLocalStorage();
     renderRecipeActions(recipeId);
-    renderRecipesList(); // Re-render lists to show cooked status
+    renderRecipesList();
     renderMenu();
 }
 
 function handleMenuClick(e) {
     const target = e.target.closest('.meal-name.clickable');
     if (!target) return;
-    
     const recipeId = target.dataset.recipeId;
     const container = document.querySelector(`.recipe-quick-view[data-recipe-container="${recipeId}"]`);
     const isExpanded = container.classList.contains('expanded');
-
     document.querySelectorAll('.recipe-quick-view.expanded').forEach(el => {
         if (el !== container) {
             el.classList.remove('expanded');
@@ -534,7 +536,6 @@ function handleMenuClick(e) {
             el.closest('.meal-item-wrapper').querySelector('.meal-name.clickable')?.classList.remove('expanded');
         }
     });
-
     if (isExpanded) {
         container.classList.remove('expanded');
         target.classList.remove('expanded');
@@ -543,21 +544,8 @@ function handleMenuClick(e) {
         const recipe = AppState.recipes[recipeId];
         if (recipe) {
             container.innerHTML = `
-                <div class="recipe-quick-view-ingredients">
-                    <h4>Ингредиенты</h4>
-                    <ul>${recipe.ingredients.map(ing => `<li>${ing.name} - ${ing.quantity}</li>`).join('')}</ul>
-                </div>
-                <div class="recipe-quick-view-steps">
-                    <h4>Шаги</h4>
-                    ${recipe.steps.map((step, index) => `
-                        <div class="step">
-                            <strong>Шаг ${index + 1}: ${step.title}</strong>
-                            <p>${step.description}</p>
-                            ${step.timer ? `<div class="timer-container" data-timer-id="${recipeId}-${index}"><div class="timer-display">00:00</div><div class="timer-controls"><button class="start-btn">Старт</button><button class="pause-btn" disabled>Пауза</button><button class="reset-btn">Сброс</button></div></div>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            `;
+                <div class="recipe-quick-view-ingredients"><h4>Ингредиенты</h4><ul>${recipe.ingredients.map(ing => `<li>${ing.name} - ${ing.quantity}</li>`).join('')}</ul></div>
+                <div class="recipe-quick-view-steps"><h4>Шаги</h4>${recipe.steps.map((step, index) => `<div class="step"><strong>Шаг ${index + 1}: ${step.title}</strong><p>${step.description}</p>${step.timer ? `<div class="timer-container" data-timer-id="${recipeId}-${index}"><div class="timer-display">00:00</div><div class="timer-controls"><button class="start-btn">Старт</button><button class="pause-btn" disabled>Пауза</button><button class="reset-btn">Сброс</button></div></div>` : ''}</div>`).join('')}</div>`;
             container.classList.add('expanded');
             target.classList.add('expanded');
         }
@@ -575,13 +563,10 @@ function handleRecipeStepClick(e) {
 function handleRecipeNav(e) {
     const recipe = AppState.recipes[AppState.currentRecipeId];
     if (!recipe) return;
-
     if (e.target.id === 'next-step-btn' && AppState.currentStepIndex < recipe.steps.length - 1) {
-        AppState.currentStepIndex++;
-        updateStepVisibility(true);
+        AppState.currentStepIndex++; updateStepVisibility(true);
     } else if (e.target.id === 'prev-step-btn' && AppState.currentStepIndex > 0) {
-        AppState.currentStepIndex--;
-        updateStepVisibility(false);
+        AppState.currentStepIndex--; updateStepVisibility(false);
     } else if (e.target.id === 'mark-cooked-btn') {
         toggleCookedStatus(AppState.currentRecipeId);
         showToast("Рецепт отмечен как приготовленный!");
@@ -619,76 +604,20 @@ function handleTouchEnd() {
 }
 
 // --- API & GENERATION LOGIC ---
-const responseSchema = {
-    type: Type.OBJECT,
-    properties: {
-        menu: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    dayName: { type: Type.STRING },
-                    breakfast: { type: Type.STRING },
-                    snack1: { type: Type.STRING },
-                    lunch: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING },},},
-                    snack2: { type: Type.STRING },
-                    dinner: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, recipeId: { type: Type.STRING },},},
-                },
-            },
-        },
-        recipes: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    id: { type: Type.STRING }, name: { type: Type.STRING }, isProteinBased: { type: Type.BOOLEAN },
-                    ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, quantity: { type: Type.STRING },},},},
-                    steps: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING }, timer: { type: Type.INTEGER, nullable: true },},},},
-                },
-            },
-        },
-        shoppingList: {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    id: { type: Type.STRING }, name: { type: Type.STRING }, quantity: { type: Type.STRING }, category: { type: Type.STRING }, price: { type: Type.NUMBER },
-                },
-            },
-        },
-    },
-};
+const responseSchema = {type:Type.OBJECT,properties:{menu:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{dayName:{type:Type.STRING},breakfast:{type:Type.STRING},snack1:{type:Type.STRING},lunch:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},snack2:{type:Type.STRING},dinner:{type:Type.OBJECT,properties:{name:{type:Type.STRING},recipeId:{type:Type.STRING},},},},},},recipes:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},isProteinBased:{type:Type.BOOLEAN},ingredients:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{name:{type:Type.STRING},quantity:{type:Type.STRING},},},},steps:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{title:{type:Type.STRING},description:{type:Type.STRING},timer:{type:Type.INTEGER,nullable:true},},},},},},},shoppingList:{type:Type.ARRAY,items:{type:Type.OBJECT,properties:{id:{type:Type.STRING},name:{type:Type.STRING},quantity:{type:Type.STRING},category:{type:Type.STRING},price:{type:Type.NUMBER},},},},},};
 
 async function handleGeneration() {
-    if (!ai) { 
-        showToast("Генерация недоступна. API ключ не настроен.", true);
-        return; 
-    }
+    if (!ai) { showToast("Генерация недоступна. Проверьте API ключ в настройках.", true); return; }
     DOM.loaderModal.classList.add('visible');
     try {
         const prompt = createPrompt(AppState.settings);
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: responseSchema,
-            },
+            config: { responseMimeType: "application/json", responseSchema: responseSchema },
         });
-        
-        let data;
-        try {
-            data = JSON.parse(response.text);
-        } catch (parseError) {
-            console.error("JSON parsing error:", parseError);
-            throw new Error("Не удалось обработать ответ от сервера. Пожалуйста, попробуйте снова.");
-        }
-
-        const recipesObject = data.recipes.reduce((acc, recipe) => {
-            acc[recipe.id] = recipe;
-            return acc;
-        }, {});
-
+        const data = JSON.parse(response.text);
+        const recipesObject = data.recipes.reduce((acc, recipe) => { acc[recipe.id] = recipe; return acc; }, {});
         AppState.menu = data.menu;
         AppState.recipes = recipesObject;
         AppState.shoppingList = data.shoppingList.map(item => ({...item, completed: false}));
@@ -699,7 +628,7 @@ async function handleGeneration() {
         renderApp();
     } catch (error) { 
         console.error("Error generating menu:", error); 
-        showToast(error.message || "Произошла ошибка при генерации меню.", true);
+        showToast(error.message || "Ошибка при генерации. Проверьте ключ и попробуйте снова.", true);
     } finally { 
         DOM.loaderModal.classList.remove('visible'); 
     }
@@ -721,7 +650,6 @@ function createPrompt(settings) {
     return `Generate a complete family meal plan as a single valid JSON object, without markdown. Structure: { "menu": [], "recipes": [], "shoppingList": [] }. Preferences: - People: ${settings.people} - Days: ${settings.days} - Protein: ${settings.protein} - Restrictions: ${settings.restrictions.join(', ')} - Goal: ${settings.goal} - Allergies: ${settings.allergies || 'None'}. Rules: 1. Menu: Array for ${settings.days} days. Each day object needs: "dayName", "breakfast", "snack1", "lunch" ({ "name", "recipeId" }), "snack2", "dinner" ({ "name", "recipeId" }). Include 1-2 leftover meals. 2. Recipes: Array of objects. Each needs: unique camelCase "id", "name", "isProteinBased" (boolean), "ingredients" (array of { "name", "quantity" }), "steps" (array of { "title", "description", "timer": integer in minutes, optional }). 3. Shopping List: Consolidate all ingredients. Each item needs: unique kebab-case "id", "name", "quantity", "category" (from: "Мясо и птица", "Молочные и яйца", "Овощи и зелень", "Фрукты и орехи", "Крупы и мука", "Хлеб и выпечка", "Прочее"), "price" (estimated price in RUB, proportional to people/days ${priceReference}). All text must be in Russian. Generate simple, common recipes suitable for a Russian family.`;
 }
 
-
 // --- UTILITIES ---
 function showToast(message, isError = false) {
     DOM.toast.textContent = message;
@@ -733,22 +661,16 @@ function showToast(message, isError = false) {
 // --- SYNC & DATA MANAGEMENT ---
 async function sharePlanViaQR() {
     if (!AppState.menu || AppState.menu.length === 0) {
-        showToast('Сначала сгенерируйте меню, чтобы поделиться им.');
-        return;
+        showToast('Сначала сгенерируйте меню, чтобы поделиться им.'); return;
     }
     try {
-        // CRITICAL FIX: Use a serializable version of the state
         const stateToShare = getSerializableState();
         const jsonString = JSON.stringify(stateToShare);
         const compressed = pako.deflate(jsonString, { to: 'string' });
         const base64 = btoa(compressed);
-        
         await QRCode.toCanvas(DOM.qrCodeCanvas, base64, { errorCorrectionLevel: 'L', width: 256 });
         DOM.qrCodeModal.classList.add('visible');
-    } catch (err) {
-        console.error('QR Code generation failed', err);
-        showToast('Не удалось создать QR-код.');
-    }
+    } catch (err) { console.error('QR Code generation failed', err); showToast('Не удалось создать QR-код.'); }
 }
 
 async function startQrScanner() {
@@ -758,10 +680,7 @@ async function startQrScanner() {
         DOM.qrVideo.play();
         DOM.qrScannerModal.classList.add('visible');
         qrAnimation = requestAnimationFrame(tick);
-    } catch (err) {
-        console.error("Camera access denied:", err);
-        showToast("Не удалось получить доступ к камере.");
-    }
+    } catch (err) { console.error("Camera access denied:", err); showToast("Не удалось получить доступ к камере."); }
 }
 
 function stopQrScanner() {
@@ -776,13 +695,11 @@ function stopQrScanner() {
 function tick() {
     if (DOM.qrVideo.readyState === DOM.qrVideo.HAVE_ENOUGH_DATA) {
         const canvas = document.createElement('canvas');
-        canvas.width = DOM.qrVideo.videoWidth;
-        canvas.height = DOM.qrVideo.videoHeight;
+        canvas.width = DOM.qrVideo.videoWidth; canvas.height = DOM.qrVideo.videoHeight;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(DOM.qrVideo, 0, 0, canvas.width, canvas.height);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, imageData.width, imageData.height);
-
         if (code) {
             stopQrScanner();
             try {
@@ -793,15 +710,12 @@ function tick() {
                     Object.assign(AppState, importedState);
                     saveStateToLocalStorage();
                     populateSettingsForm();
-                    initializeAI();
+                    verifyAndInitializeAI();
                     AppState.activeScreen = 'menu-screen';
                     renderApp();
                     showToast("План успешно синхронизирован!");
                 } else { throw new Error("Invalid data"); }
-            } catch (err) {
-                console.error("QR data processing error", err);
-                showToast("Ошибка: Неверный QR-код.");
-            }
+            } catch (err) { console.error("QR data processing error", err); showToast("Ошибка: Неверный QR-код."); }
             return;
         }
     }
@@ -835,8 +749,7 @@ function exportState() {
 }
 
 function importState(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+    const file = event.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
         try {
@@ -845,7 +758,7 @@ function importState(event) {
                 Object.assign(AppState, importedState);
                 saveStateToLocalStorage();
                 populateSettingsForm();
-                initializeAI();
+                verifyAndInitializeAI();
                 AppState.activeScreen = 'menu-screen';
                 renderApp();
                 showToast("Данные успешно импортированы!");
@@ -856,74 +769,47 @@ function importState(event) {
     reader.readAsText(file);
 }
 
-// --- Timer Functions (REFACTORED) ---
+// --- Timer Functions ---
 function startTimer(timerId) {
-    const timer = AppState.timers[timerId];
-    if (!timer || timer.interval) return; 
-
+    const timer = AppState.timers[timerId]; if (!timer || timer.interval) return; 
     timer.running = true;
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) {
-        controls.querySelector('.start-btn').disabled = true;
-        controls.querySelector('.pause-btn').disabled = false;
-    }
-
+    if(controls) { controls.querySelector('.start-btn').disabled = true; controls.querySelector('.pause-btn').disabled = false; }
     timer.interval = setInterval(() => {
         timer.remaining--;
         updateTimerDisplay(timerId);
         if (timer.remaining <= 0) {
             clearInterval(timer.interval);
-            timer.running = false;
-            timer.interval = null;
-            timer.remaining = 0;
+            timer.running = false; timer.interval = null; timer.remaining = 0;
             showToast("Этап завершён!");
             alarmSound.play().catch(e => console.log("Playback prevented", e));
             if(controls) controls.querySelector('.pause-btn').disabled = true;
         }
-        // Save state periodically, not every second
-        if (timer.remaining % 5 === 0) {
-           saveStateToLocalStorage();
-        }
+        if (timer.remaining % 5 === 0) saveStateToLocalStorage();
     }, 1000);
 }
 
 function pauseTimer(timerId) {
-    const timer = AppState.timers[timerId];
-    if (!timer || !timer.running) return;
-    
+    const timer = AppState.timers[timerId]; if (!timer || !timer.running) return;
     clearInterval(timer.interval);
-    timer.running = false;
-    timer.interval = null;
-    
+    timer.running = false; timer.interval = null;
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) {
-        controls.querySelector('.start-btn').disabled = false;
-        controls.querySelector('.pause-btn').disabled = true;
-    }
+    if(controls) { controls.querySelector('.start-btn').disabled = false; controls.querySelector('.pause-btn').disabled = true; }
     saveStateToLocalStorage();
 }
 
 function resetTimer(timerId) {
-    const timer = AppState.timers[timerId];
-    if (!timer) return;
-    
+    const timer = AppState.timers[timerId]; if (!timer) return;
     if (timer.interval) clearInterval(timer.interval);
-    timer.running = false;
-    timer.interval = null;
-    timer.remaining = timer.duration;
-    
+    timer.running = false; timer.interval = null; timer.remaining = timer.duration;
     updateTimerDisplay(timerId);
     const controls = document.querySelector(`[data-timer-id="${timerId}"] .timer-controls`);
-    if(controls) {
-        controls.querySelector('.start-btn').disabled = false;
-        controls.querySelector('.pause-btn').disabled = true;
-    }
+    if(controls) { controls.querySelector('.start-btn').disabled = false; controls.querySelector('.pause-btn').disabled = true; }
     saveStateToLocalStorage();
 }
 
 function updateTimerDisplay(timerId) {
-    const timer = AppState.timers[timerId];
-    if (!timer) return;
+    const timer = AppState.timers[timerId]; if (!timer) return;
     const display = document.querySelector(`[data-timer-id="${timerId}"] .timer-display`);
     if(display) {
         const minutes = Math.floor(timer.remaining / 60).toString().padStart(2, '0');

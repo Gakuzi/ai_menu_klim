@@ -83,8 +83,7 @@
 
                 <div class="data-management-section">
                     <h2>Управление данными</h2>
-                    <p class="subtitle">Сохраняйте, загружайте и синхронизируйте ваши планы</p>
-                    <div class="data-buttons">
+                     <div class="data-buttons">
                         <button id="share-plan-btn" class="btn-secondary">Поделиться (QR)</button>
                         <button id="scan-qr-btn" class="btn-secondary">Сканировать QR</button>
                     </div>
@@ -93,6 +92,16 @@
                         <button id="export-data-btn" class="btn-secondary">Экспорт</button>
                         <button id="print-btn" class="btn-secondary">Печать</button>
                         <input type="file" id="import-file-input" accept="application/json" style="display: none;">
+                    </div>
+
+                    <div class="ai-connection-section">
+                        <h2>Подключение AI</h2>
+                        <div class="form-group">
+                             <label for="api-key-input">Ваш API Ключ Google AI</label>
+                            <input type="password" id="api-key-input" placeholder="Введите ваш ключ...">
+                            <p id="ai-connection-status">Введите ключ для активации генерации.</p>
+                        </div>
+                        <button id="verify-api-key-btn" class="btn-secondary">Проверить и сохранить ключ</button>
                     </div>
                 </div>
             </div>

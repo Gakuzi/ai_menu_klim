@@ -199,7 +199,7 @@ body::before {
 .settings-form .form-group {
     margin-bottom: 2rem;
 }
-.settings-form label {
+.settings-form label, .data-management-section label {
     display: block;
     margin-bottom: 0.75rem;
     font-family: var(--font-family-heading);
@@ -252,7 +252,7 @@ body::before {
     color: var(--text-color);
 }
 
-select, input[type="text"] {
+select, input[type="text"], input[type="password"] {
     width: 100%;
     padding: 1rem 1.25rem;
     border: 1px solid var(--border-color);
@@ -638,16 +638,33 @@ select {
     text-decoration: line-through; color: var(--subtitle-color);
 }
 
-/* Data Management */
-.data-management-section {
+/* Data Management & AI Connection */
+.data-management-section, .ai-connection-section {
     margin-top: 3rem;
     padding-top: 2rem;
     border-top: 1px solid var(--border-color);
 }
-.data-management-section h2 {
+.data-management-section h2, .ai-connection-section h2 {
     font-family: var(--font-family-heading);
     font-size: 18pt;
 }
+.ai-connection-section .form-group {
+    margin-top: 1rem;
+}
+#ai-connection-status {
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    color: var(--subtitle-color);
+}
+#ai-connection-status.success {
+    color: var(--success-accent);
+    font-weight: bold;
+}
+#ai-connection-status.error {
+    color: var(--warning-accent);
+    font-weight: bold;
+}
+
 .data-buttons {
     display: grid;
     grid-template-columns: 1fr 1fr;
