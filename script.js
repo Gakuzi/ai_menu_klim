@@ -82,32 +82,42 @@ function checkPwaPrompt() {
 
 function initializeAI() {
     try {
-        if (!process.env.API_KEY) {
+        // Безопасная проверка наличия process.env.API_KEY, чтобы избежать ошибок в браузере
+        if (typeof process === 'undefined' || !process.env.API_KEY) {
             throw new Error("API_KEY environment variable not set.");
         }
         ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         DOM.generateButton.textContent = "Сгенерировать меню";
     } catch (error) {
-        console.error("Failed to initialize Gemini AI:", error);
+        console.warn("Ключ API не настроен. Для генерации меню будет использоваться план по умолчанию.");
         ai = null;
         DOM.generateButton.textContent = "Загрузить план по умолчанию";
-        alert("Не удалось инициализировать AI. Убедитесь, что API-ключ настроен в переменных окружения. Будет загружен план по умолчанию.");
     }
 }
 
 
 // --- STATE MANAGEMENT ---
 function saveStateToLocalStorage() {
-    localStorage.setItem('familyMenuAppState', JSON.stringify(AppState));
+    try {
+        localStorage.setItem('familyMenuAppState', JSON.stringify(AppState));
+    } catch (e) {
+        console.error("Failed to save state to localStorage:", e);
+    }
 }
 
 function loadStateFromLocalStorage() {
     const savedState = localStorage.getItem('familyMenuAppState');
     if (savedState) {
-        Object.assign(AppState, JSON.parse(savedState));
-        // Ensure cookedMeals exists for older state versions
-        if (!AppState.cookedMeals) {
-            AppState.cookedMeals = {};
+        try {
+            const parsedState = JSON.parse(savedState);
+            Object.assign(AppState, parsedState);
+            if (!AppState.cookedMeals) {
+                AppState.cookedMeals = {};
+            }
+        } catch (e) {
+            console.error("Failed to parse state from localStorage, using defaults.", e);
+            // Очистка поврежденного состояния, чтобы предотвратить будущие ошибки
+            localStorage.removeItem('familyMenuAppState');
         }
     }
     populateSettingsForm();
@@ -130,7 +140,12 @@ function updateSettingsFromForm() {
 function navigateTo(screenId) {
     const currentScreen = document.querySelector('.screen.active');
     if (currentScreen) currentScreen.classList.remove('active');
-    document.getElementById(screenId).classList.add('active');
+    
+    const nextScreen = document.getElementById(screenId);
+    if(nextScreen) {
+      nextScreen.classList.add('active');
+    }
+    
     DOM.navButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.screen === screenId));
     AppState.activeScreen = screenId;
     saveStateToLocalStorage();
