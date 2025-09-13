@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Семейное Меню</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Меню">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180' fill='none'%3E%3Crect width='180' height='180' rx='40' fill='%23F9F7F4'/%3E%3Cpath d='M125 55 C 120 45, 110 40, 100 40 C 90 40, 80 45, 75 55' stroke='%238B5E3C' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M115 65 C 110 55, 100 50, 90 50 C 80 50, 70 55, 65 65' stroke='%238B5E3C' stroke-width='6' stroke-linecap='round' opacity='0.6'/%3E%3Cpath d='M110.5 76.8431C111.956 86.0693 108.619 95.3447 101.554 101.554C94.489 107.764 85.0693 111.044 75.8431 109.5L60 125L55 120L70.5 104.157C68.9564 94.9307 72.236 85.511 78.4463 78.4463C84.6565 71.3815 93.931 68.0442 103.157 69.5L110.5 76.8431Z' fill='%23D4A373' stroke='%238B5E3C' stroke-width='6' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
+    <meta name="theme-color" content="#F9F7F4">
+</head>
+<body>
+    <main id="app-container">
+        <!-- Экран Настройки -->
+        <div id="settings-screen" class="screen">
+            <header class="screen-header">
+                <h1>Настройки плана</h1>
+                <p class="subtitle">Создайте идеальное меню для вашей семьи</p>
+            </header>
+            <div class="screen-content">
+                <form id="settings-form" class="settings-form">
+                    <div class="form-group api-key-group">
+                        <label for="api-key-input">Gemini API Key</label>
+                        <div class="input-wrapper">
+                            <input type="password" id="api-key-input" placeholder="Введите ваш API ключ...">
+                            <button type="button" id="toggle-api-key-visibility" class="toggle-visibility" aria-label="Показать/скрыть ключ"></button>
+                        </div>
+                        <p class="form-hint">Ключ нужен для генерации уникальных меню. Без него будет загружен план по умолчанию.</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="people-slider">Количество человек: <span id="people-value">3</span></label>
+                        <input type="range" id="people-slider" min="1" max="6" value="3" class="slider">
+                    </div>
+                    <div class="form-group">
+                        <label for="days-select">Период планирования</label>
+                        <select id="days-select">
+                            <option value="1">1 день</option>
+                            <option value="3">3 дня</option>
+                            <option value="5">5 дней</option>
+                            <option value="7" selected>7 дней</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Основной белок</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="protein" value="chicken" checked><span>Курица</span></label>
+                            <label><input type="radio" name="protein" value="beef"><span>Говядина</span></label>
+                            <label><input type="radio" name="protein" value="pork"><span>Свинина</span></label>
+                            <label><input type="radio" name="protein" value="vegetarian"><span>Творог/яйца</span></label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Ограничения</label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" name="restrictions" value="no-fish" checked><span>Без рыбы</span></label>
+                            <label><input type="checkbox" name="restrictions" value="no-mushrooms" checked><span>Без грибов</span></label>
+                            <label><input type="checkbox" name="restrictions" value="no-dairy"><span>Без молочных</span></label>
+                            <label><input type="checkbox" name="restrictions" value="no-eggs"><span>Без яиц</span></label>
+                            <label><input type="checkbox" name="restrictions" value="no-sugar"><span>Без сахара</span></label>
+                        </div>
+                    </div>
+                     <div class="form-group">
+                        <label>Цель питания</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="goal" value="balanced" checked><span>Сбалансированное</span></label>
+                            <label><input type="radio" name="goal" value="high-calorie"><span>Высококалорийное</span></label>
+                            <label><input type="radio" name="goal" value="low-calorie"><span>Низкокалорийное</span></label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="allergies-input">Аллергии (необязательно)</label>
+                        <input type="text" id="allergies-input" placeholder="например: орехи, клейковина">
+                    </div>
+                    <button type="submit" class="btn-primary">Сгенерировать меню</button>
+                </form>
+
+                <div class="data-management-section">
+                    <h2>Управление данными</h2>
+                    <p class="subtitle">Сохраняйте, загружайте и синхронизируйте ваши планы</p>
+                    <div class="data-buttons">
+                        <button id="share-plan-btn" class="btn-secondary">Поделиться планом</button>
+                        <button id="scan-qr-btn" class="btn-secondary">Синхронизировать по QR</button>
+                    </div>
+                     <div class="data-buttons">
+                        <button id="import-data-btn" class="btn-secondary">Импорт из файла</button>
+                        <button id="export-data-btn" class="btn-secondary">Экспорт в файл</button>
+                        <input type="file" id="import-file-input" accept="application/json" style="display: none;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Экран Меню -->
+        <div id="menu-screen" class="screen">
+            <header class="screen-header">
+                <h1>Меню на неделю</h1>
+                <p class="subtitle">Ваш план питания готов</p>
+            </header>
+            <div id="menu-content" class="screen-content"></div>
+             <div class="footer-action">
+                <button id="regenerate-menu" class="btn-secondary">Обновить меню</button>
+            </div>
+        </div>
+
+        <!-- Экран Рецепты -->
+        <div id="recipes-screen" class="screen">
+            <header class="screen-header">
+                <h1>Книга рецептов</h1>
+                 <p class="subtitle">Все блюда из вашего меню</p>
+            </header>
+            <div id="recipes-list" class="screen-content"></div>
+        </div>
+
+        <!-- Экран Детали Рецепта -->
+        <div id="recipe-detail-screen" class="screen">
+             <header class="screen-header sticky-header">
+                <button id="back-to-recipes" class="back-button"></button>
+                <div class="header-content">
+                    <h1 id="recipe-title-detail">Название рецепта</h1>
+                    <div class="step-progress-bar-container">
+                        <div id="step-progress-bar"></div>
+                    </div>
+                </div>
+            </header>
+            <div id="recipe-steps-container" class="screen-content"></div>
+            <div id="recipe-actions" class="footer-action"></div>
+        </div>
+
+        <!-- Экран Список Покупок -->
+        <div id="shopping-list-screen" class="screen">
+            <header class="screen-header">
+                <h1>Список покупок</h1>
+                <p class="subtitle">Всё, что нужно для ваших блюд</p>
+            </header>
+            <div id="shopping-list-summary" class="shopping-summary"></div>
+            <div id="shopping-list-content" class="screen-content"></div>
+             <div class="footer-action">
+                <button id="export-reminders-button" class="btn-secondary">Добавить в Напоминания</button>
+            </div>
+        </div>
+        
+        <!-- Экран Печать -->
+        <div id="print-screen" class="screen">
+            <header class="screen-header no-print">
+                <h1>Версия для печати</h1>
+                <button onclick="window.print()" class="btn-primary no-print">Распечатать</button>
+            </header>
+            <div id="print-content" class="print-page"></div>
+        </div>
+
+        <!-- Навигация -->
+        <nav id="bottom-nav">
+            <button data-screen="settings-screen" class="nav-btn active" aria-label="Настройки">🛠️<span class="nav-label">Настройки</span></button>
+            <button data-screen="menu-screen" class="nav-btn" aria-label="Меню">🍽️<span class="nav-label">Меню</span></button>
+            <button data-screen="recipes-screen" class="nav-btn" aria-label="Рецепты">👨‍🍳<span class="nav-label">Рецепты</span></button>
+            <button data-screen="shopping-list-screen" class="nav-btn" aria-label="Список покупок">🛒<span class="nav-label">Покупки</span></button>
+            <button data-screen="print-screen" class="nav-btn" aria-label="Печать">🖨️<span class="nav-label">Печать</span></button>
+        </nav>
+    </main>
+
+    <!-- Модальные окна -->
+    <div id="loader-modal" class="modal-overlay"><div class="modal-content"><div class="spinner"></div><p>Создаём немного магии...<br>Ваше меню почти готово!</p></div></div>
+    <div id="pwa-modal" class="modal-overlay"><div class="modal-content"><h3>Как дома</h3><p>Чтобы приложение всегда было под рукой, добавьте его на главный экран:</p><ol><li>Нажмите иконку <strong>"Поделиться"</strong> в Safari.</li><li>Пролистайте и выберите <strong>"На экран «Домой»"</strong>.</li></ol><button id="close-pwa-modal" class="btn-secondary">Понятно</button></div></div>
+    <div id="qr-code-modal" class="modal-overlay"><div class="modal-content"><h3>Поделиться планом</h3><p>Попросите члена семьи отсканировать этот QR-код в приложении, чтобы синхронизировать данные.</p><canvas id="qr-code-canvas"></canvas><button id="close-qr-modal" class="btn-secondary">Закрыть</button></div></div>
+    <div id="qr-scanner-modal" class="modal-overlay"><div class="modal-content"><div id="scanner-container"><h3>Сканирование QR-кода</h3><p>Наведите камеру на QR-код другого устройства.</p><video id="qr-video" playsinline></video><div class="scanner-box"></div></div><button id="close-scanner-modal" class="btn-secondary">Отмена</button></div></div>
+    
+    <!-- Toast-уведомление -->
+    <div id="toast-notification" class="toast"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script src="script.js" type="module"></script>
+</body>
+</html>
